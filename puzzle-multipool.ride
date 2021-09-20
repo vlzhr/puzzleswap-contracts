@@ -1,0 +1,279 @@
+{-# STDLIB_VERSION 5 #-}
+{-# CONTENT_TYPE DAPP #-}
+{-# SCRIPT_TYPE ACCOUNT #-}
+
+let T = 3 # tokens range
+let assetIds = [
+  base58'CE5cxMvz7865CyFZPFUmDiL4KRkYXP6b6oYgN3vmWdV5',  # FARM STREET
+  base58'5m5stLsMZSPomwxTTjJGMMEnjMafRMfap5vZyaLwgMKD',  # FARM KOLKHOZ
+  base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p']  # USDN
+let AssetsWeights = [30, 30, 40]
+let AssetsWeightsDecimals = 2
+let PoolTokenDecimals = pow(2, 0, 3, 0, 0, FLOOR)
+let Decimals = [8, 8, 6]
+let Scales = [1_0000_0000, 1_0000_0000, 1_000_000]
+let Fee = 200
+let Scale = 10000
+let FeeScale = 10000
+let feeAggregator = Address(base58'3PDaWPwa1Ap8rhxbCNYvfs2b174rHgwEN8T')
+
+func tryGetInteger(key: String) = {
+  match getInteger(this, key) {
+      case b:Int => b
+      case _ => 0
+  }
+}
+
+func tryGetBinary(key: String) = {
+  match getBinary(this, key) {
+      case b:ByteVector => b
+      case _ => base58''
+  }
+}
+
+func getCurrentTokenBalance(tokenType: Int) = {
+  let tokenId = assetIds[tokenType].toBase58String()
+  tryGetInteger("global_"+tokenId+"_balance")
+}
+
+func calculatePIssued(amount: Int, tokenId: ByteVector) = {
+  # P issued = pool tokens to issue
+  let Psupply = tryGetInteger("global_poolToken_amount")
+  let Balance = tryGetInteger("global_"+tokenId.toBase58String()+"_balance")
+  fraction(amount, Psupply, Balance)
+}
+
+func getMinPIssued(payments: List[AttachedPayment]) = {
+  func handler(accum: Int, current: AttachedPayment) = {
+    let PIssued = calculatePIssued(current.amount, current.assetId.value())
+    if ((accum == 0) || (PIssued < accum)) then {PIssued} else {accum}
+  }
+  let minPIssed = FOLD<10>(payments, 0, handler)
+  minPIssed
+}
+
+func checkTokensValidity(payments: List[AttachedPayment]) = {
+  func handler1(accum: List[ByteVector], payment: AttachedPayment) = {
+    accum ++ [payment.assetId.value()]
+  }
+  let ids = FOLD<10>(payments, [], handler1)
+  func handler2(accum: Int, assetId: ByteVector) = {
+    if (ids.indexOf(assetId) != unit) then {accum+1} else {throw("asset not attached: " + assetId.toBase58String())}
+  }
+  let checks = FOLD<10>(assetIds, 0, handler2)
+  true
+}
+
+func handlePoolTokensAdd(PIssued: Int, payments: List[AttachedPayment], userAddress: Address) = {
+  func getTokenPaymentAmount(tokenId: ByteVector) = {
+    func handler(accum: Int, payment: AttachedPayment) = {
+      if (payment.assetId == tokenId) then {payment.amount} else {accum}
+    }
+    FOLD<10>(payments, 0, handler)
+  }
+
+  func handleTokenChange(accum: List[IntegerEntry], tokenId: ByteVector) = {
+    let Bk = tryGetInteger("global_"+tokenId.toBase58String()+"_balance")
+    let PSupply = tryGetInteger("global_poolToken_amount")
+    let tokenDecimals = tryGetInteger("static_"+tokenId.toBase58String()+"_scale")
+    let Dk = fraction((fraction(PSupply + PIssued, tokenDecimals, PSupply) - tokenDecimals), Bk, tokenDecimals)  # deposited amount of token K
+
+    accum ++ [
+      IntegerEntry("global_"+tokenId.toBase58String()+"_balance", Bk+Dk)
+    ]
+  }
+
+  func handleTokenChange2(accum: List[ScriptTransfer], tokenId: ByteVector) = {
+    let Bk = tryGetInteger("global_"+tokenId.toBase58String()+"_balance")
+    let PSupply = tryGetInteger("global_poolToken_amount")
+    let tokenDecimals = tryGetInteger("static_"+tokenId.toBase58String()+"_scale")
+    let Dk = fraction((fraction(PSupply + PIssued, tokenDecimals, PSupply) - tokenDecimals), Bk, tokenDecimals)  # deposited amount of token K
+
+    let paymentAmount = getTokenPaymentAmount(tokenId)
+    let toReturn = (if (paymentAmount != 0) then {paymentAmount} else {0}) - Dk
+
+    accum ++ [
+      ScriptTransfer(userAddress, toReturn, tokenId)
+    ]
+  }
+
+  FOLD<10>(assetIds, [], handleTokenChange) ++ 
+  FOLD<10>(assetIds, [], handleTokenChange2)
+}
+
+func handlePoolTokensRedeem(PRedeemed: Int, userAddress: Address) = {
+  func handleTokenRedeem(accum: List[IntegerEntry], tokenId: ByteVector) = {
+    let Bk = tryGetInteger("global_"+tokenId.toBase58String()+"_balance")
+    let PSupply = tryGetInteger("global_poolToken_amount")
+    let tokenDecimals = tryGetInteger("static_"+tokenId.toBase58String()+"_scale")
+
+    let amount = fraction((tokenDecimals - fraction(PSupply - PRedeemed, tokenDecimals, PSupply)), Bk, tokenDecimals)
+    accum ++ [
+      IntegerEntry("global_"+tokenId.toBase58String()+"_balance", Bk-amount)
+    ]
+  }
+
+  func handleTokenRedeem2(accum: List[ScriptTransfer], tokenId: ByteVector) = {
+    let Bk = tryGetInteger("global_"+tokenId.toBase58String()+"_balance")
+    let PSupply = tryGetInteger("global_poolToken_amount")
+    let tokenDecimals = tryGetInteger("static_"+tokenId.toBase58String()+"_scale")
+
+    let amount = fraction((tokenDecimals - fraction(PSupply - PRedeemed, tokenDecimals, PSupply)), Bk, tokenDecimals)
+    accum ++ [
+      ScriptTransfer(userAddress, amount, tokenId)
+    ]
+  }
+  FOLD<10>(assetIds, [], handleTokenRedeem) ++
+  FOLD<10>(assetIds, [], handleTokenRedeem2)
+}
+
+
+func calculateOutAmount(AmountIn: Int, assetIn: ByteVector, assetOut: ByteVector) = {
+  let IndexIn = assetIds.indexOf(assetIn).value()
+  let IndexOut = assetIds.indexOf(assetOut).value()
+  
+  if (IndexIn == IndexOut) then { throw("inalid tokens pair") } 
+  else {
+    let BalanceIn = tryGetInteger("global_"+assetIn.toBase58String()+"_balance")
+    let BalanceOut = tryGetInteger("global_"+assetOut.toBase58String()+"_balance")
+
+    fraction(BalanceOut, 1_0000 - 
+                  pow((BalanceIn * 1_0000 / (BalanceIn + AmountIn)), 
+                        4, 
+                        fraction(AssetsWeights[IndexIn], 1_0000, AssetsWeights[IndexOut]),
+                        4,
+                        4,
+                        FLOOR
+                      ), 1_0000)                
+  }
+}
+
+
+@Callable(i)
+func preInit() = {
+  [
+    IntegerEntry("static_"+assetIds[0].toBase58String()+"_scale", Scales[0]),
+    IntegerEntry("static_"+assetIds[1].toBase58String()+"_scale", Scales[1]),
+    IntegerEntry("static_"+assetIds[2].toBase58String()+"_scale", Scales[2])
+  ]
+}
+
+
+@Callable(i)
+func init() = {
+  func prepareList() = {
+    func handler(accum: List[IntegerEntry], n:AttachedPayment) = {
+      accum ++ [
+        IntegerEntry("global_" + n.assetId.value().toBase58String() + "_balance", n.amount)
+      ]
+    }
+    FOLD<10>(i.payments, [], handler)
+  }
+
+  func calculatePoolTokensAmount(payments: List[AttachedPayment]) = {
+    func handler(accum: Int, pmt: AttachedPayment) = {
+      let assetId = pmt.assetId.value()
+      func handler2(accum: Int, n: ByteVector) = {
+        if (n == assetId) then {assetIds.indexOf(n).value()} else {accum}
+      }
+      let Token = FOLD<10>(assetIds, 1, handler2)
+      accum * pow(pmt.amount, Decimals[Token], AssetsWeights[Token], AssetsWeightsDecimals, 2, FLOOR)
+    }
+    FOLD<10>(payments, 1, handler)
+  }
+
+  if (tryGetInteger("global_wasInited") > 0) then {  # PROD: > 0
+    throw("pool already inited")
+  } else {
+    let initialPoolTokens = calculatePoolTokensAmount(i.payments)
+
+    let poolTokenIssue = Issue("Puzzle3", "Puzzle Swap Pool Token", initialPoolTokens, PoolTokenDecimals, true, unit, 0)
+    let poolTokenId = poolTokenIssue.calculateAssetId()
+    # let poolTokenId = getBinaryValue(this, "global_poolToken_id")
+    # let poolTokenReissue = Reissue(poolTokenId, initialPoolTokens, true)
+
+    prepareList() ++
+    [
+      poolTokenIssue,
+      IntegerEntry("global_poolToken_amount", initialPoolTokens),
+      IntegerEntry("global_wasInited", 1),
+      BinaryEntry("global_poolToken_id", poolTokenId),
+      ScriptTransfer(i.caller, initialPoolTokens, poolTokenId)
+    ]
+
+  }
+}
+
+@Callable(i)
+func addLiquidity() = {
+  # throw("LP is closed yet")
+  if (i.payments.size() != T) then {
+    throw("you need to attach all pool tokens. amount of pool tokens: " + T.toString())
+  } else {
+    if (!(checkTokensValidity(i.payments))) then {throw("wrong assets attached")} 
+    else {
+      let PIssued = getMinPIssued(i.payments)
+      let result = handlePoolTokensAdd(PIssued, i.payments, i.caller)
+      let reissue = Reissue(tryGetBinary("global_poolToken_id"), PIssued, true)
+      
+      result ++ [
+        reissue,
+        ScriptTransfer(i.caller, PIssued, tryGetBinary("global_poolToken_id")),
+        IntegerEntry("global_poolToken_amount", tryGetInteger("global_poolToken_amount") + PIssued)
+      ]
+    }
+  }
+}
+
+
+@Callable(i)
+func removeLiquidity() = {
+  # throw("LP is closed yet")
+  let pmt = i.payments[0]
+  if (pmt.assetId != tryGetBinary("global_poolToken_id")) then {
+    throw("please attach pool share token")
+  } else {
+    let PRedeemed = pmt.amount
+    let result = handlePoolTokensRedeem(PRedeemed, i.caller)
+    result ++ [
+      Burn(tryGetBinary("global_poolToken_id"), PRedeemed),
+      IntegerEntry("global_poolToken_amount", tryGetInteger("global_poolToken_amount") - PRedeemed)
+    ]
+  }
+}
+
+
+@Callable(i)
+func swap(assetOut: String, minimum: Int) = {
+  let pmt = i.payments[0].value()
+  let AmountIn = i.payments[0].amount.value()
+  let AssetIn = pmt.assetId.value()
+
+  let AssetOut = assetOut.fromBase58String()
+
+  let AmountOut = calculateOutAmount(AmountIn, AssetIn, AssetOut)
+  if (AmountOut < minimum) then {
+    throw("amount to recieve it lower than given one: " + AmountOut.toString())
+  } 
+  else if (AmountIn < (Decimals[assetIds.indexOf(AssetIn).value()] / 1_0000)) then {
+    throw("sum to exchane is too small")
+  } 
+  else if (tryGetInteger("global_"+AssetOut.toBase58String()+"_balance") - AmountOut < 0) then {
+    throw("contract is out of reserves")
+  }
+  else {
+    let feeAmount = fraction(AmountOut, Fee, FeeScale)
+    let cleanAmountOut = AmountOut - feeAmount
+    [
+      ScriptTransfer(feeAggregator, feeAmount, AssetOut),
+      IntegerEntry("global_"+AssetOut.toBase58String()+"_balance", tryGetInteger("global_"+AssetOut.toBase58String()+"_balance") - cleanAmountOut),
+      IntegerEntry("global_"+AssetIn.toBase58String()+"_balance", tryGetInteger("global_"+AssetIn.toBase58String()+"_balance") + AmountIn),
+      ScriptTransfer(i.caller, cleanAmountOut, AssetOut)
+    ]
+  }
+}
+
+
+@Verifier(tx)
+func verify() = sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey)
+        
