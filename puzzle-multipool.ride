@@ -40,7 +40,7 @@ func calculatePIssued(amount: Int, tokenId: ByteVector) = {
   # P issued = pool tokens to issue
   let Psupply = tryGetInteger("global_poolToken_amount")
   let Balance = tryGetInteger("global_"+tokenId.toBase58String()+"_balance")
-  fraction(amount, Psupply, Balance)
+  fraction(amount, Psupply, Balance, DOWN)
 }
 
 func getMinPIssued(payments: List[AttachedPayment]) = {
@@ -76,7 +76,7 @@ func handlePoolTokensAdd(PIssued: Int, payments: List[AttachedPayment], userAddr
     let Bk = tryGetInteger("global_"+tokenId.toBase58String()+"_balance")
     let PSupply = tryGetInteger("global_poolToken_amount")
     let tokenDecimals = tryGetInteger("static_"+tokenId.toBase58String()+"_scale")
-    let Dk = fraction((fraction(PSupply + PIssued, tokenDecimals, PSupply) - tokenDecimals), Bk, tokenDecimals)  # deposited amount of token K
+    let Dk = fraction((fraction(PSupply + PIssued, tokenDecimals, PSupply, DOWN) - tokenDecimals), Bk, tokenDecimals, DOWN)  # deposited amount of token K
 
     accum ++ [
       IntegerEntry("global_"+tokenId.toBase58String()+"_balance", Bk+Dk)
@@ -87,7 +87,7 @@ func handlePoolTokensAdd(PIssued: Int, payments: List[AttachedPayment], userAddr
     let Bk = tryGetInteger("global_"+tokenId.toBase58String()+"_balance")
     let PSupply = tryGetInteger("global_poolToken_amount")
     let tokenDecimals = tryGetInteger("static_"+tokenId.toBase58String()+"_scale")
-    let Dk = fraction((fraction(PSupply + PIssued, tokenDecimals, PSupply) - tokenDecimals), Bk, tokenDecimals)  # deposited amount of token K
+    let Dk = fraction((fraction(PSupply + PIssued, tokenDecimals, PSupply, DOWN) - tokenDecimals), Bk, tokenDecimals, DOWN)  # deposited amount of token K
 
     let paymentAmount = getTokenPaymentAmount(tokenId)
     let toReturn = (if (paymentAmount != 0) then {paymentAmount} else {0}) - Dk
@@ -107,7 +107,7 @@ func handlePoolTokensRedeem(PRedeemed: Int, userAddress: Address) = {
     let PSupply = tryGetInteger("global_poolToken_amount")
     let tokenDecimals = tryGetInteger("static_"+tokenId.toBase58String()+"_scale")
 
-    let amount = fraction((tokenDecimals - fraction(PSupply - PRedeemed, tokenDecimals, PSupply)), Bk, tokenDecimals)
+    let amount = fraction((tokenDecimals - fraction(PSupply - PRedeemed, tokenDecimals, PSupply, DOWN)), Bk, tokenDecimals, DOWN)
     accum ++ [
       IntegerEntry("global_"+tokenId.toBase58String()+"_balance", Bk-amount)
     ]
@@ -118,7 +118,7 @@ func handlePoolTokensRedeem(PRedeemed: Int, userAddress: Address) = {
     let PSupply = tryGetInteger("global_poolToken_amount")
     let tokenDecimals = tryGetInteger("static_"+tokenId.toBase58String()+"_scale")
 
-    let amount = fraction((tokenDecimals - fraction(PSupply - PRedeemed, tokenDecimals, PSupply)), Bk, tokenDecimals)
+    let amount = fraction((tokenDecimals - fraction(PSupply - PRedeemed, tokenDecimals, PSupply, DOWN)), Bk, tokenDecimals, DOWN)
     accum ++ [
       ScriptTransfer(userAddress, amount, tokenId)
     ]
@@ -137,14 +137,15 @@ func calculateOutAmount(AmountIn: Int, assetIn: ByteVector, assetOut: ByteVector
     let BalanceIn = tryGetInteger("global_"+assetIn.toBase58String()+"_balance")
     let BalanceOut = tryGetInteger("global_"+assetOut.toBase58String()+"_balance")
 
-    fraction(BalanceOut, 1_0000 - 
-                  pow((BalanceIn * 1_0000 / (BalanceIn + AmountIn)), 
-                        4, 
-                        fraction(AssetsWeights[IndexIn], 1_0000, AssetsWeights[IndexOut]),
-                        4,
-                        4,
-                        FLOOR
-                      ), 1_0000)                
+    fraction( BalanceOut, 
+              Scales[IndexOut] - 
+              pow((BalanceIn * Scales[IndexIn] / (BalanceIn + AmountIn)), 
+                    Decimals[IndexIn], 
+                    fraction(AssetsWeights[IndexIn], 1_0000, AssetsWeights[IndexOut]),
+                    4,
+                    Decimals[IndexOut],
+                    FLOOR)
+              ,Scales[IndexOut], DOWN)                
   }
 }
 
@@ -255,8 +256,8 @@ func swap(assetOut: String, minimum: Int) = {
   if (AmountOut < minimum) then {
     throw("amount to recieve it lower than given one: " + AmountOut.toString())
   } 
-  else if (AmountIn < (Decimals[assetIds.indexOf(AssetIn).value()] / 1_0000)) then {
-    throw("sum to exchane is too small")
+  else if (AmountIn < (Scales[assetIds.indexOf(AssetIn).value()] / 1_0000)) then {
+    throw("sum to exchange is too small")
   } 
   else if (tryGetInteger("global_"+AssetOut.toBase58String()+"_balance") - AmountOut < 0) then {
     throw("contract is out of reserves")
