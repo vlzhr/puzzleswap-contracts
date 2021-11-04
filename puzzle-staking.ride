@@ -1,0 +1,117 @@
+{-# STDLIB_VERSION 5 #-}
+{-# CONTENT_TYPE DAPP #-}
+{-# SCRIPT_TYPE ACCOUNT #-}
+
+let DISCLAIMER = "testing PUZZLE staking smart contract with rewards in multiple assets"
+
+let scale = 1_0000_0000
+
+let puzzleId = base58'5PFDy4GuDdeKLfKwcdm65s9y3MiEB7w1yEiEDkXNSCSU'
+
+let earnedAssets = [
+  base58'C1iWsKGqLwjHUndiQ7iXpdmPum9PeCDFfyXBdJJosDRS',  # EGG
+  base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p',  # USDN
+  base58'EfdcPXw7o7rrrPWmMBr2sa66Dk95n56622ngujbaGhye',  # FARM DUXPLORER
+  base58'B543bkZcZNo5GrUnd5fxB6EwkiJhAVyKCkPn5nWzZC2s',  # FARM MATH
+  base58'5bcAh1r6ydrpk44FEmrnmJQjumgKo3NKEEsyfgmZYwxC',  # FARM TURTLE
+  base58'54UszKAj3MtYmkdRCqSXAcaQLaVALBy7CCrVkfmfzhxR',  # FARM EGGSEGGS
+  base58'5nk9JW8yRonyNBEwhChoksLxpBECVxbVLqaNuQs9EJn1',  # FARM PESOLATINO
+  base58'Dfx6LJPndo1h5Umk9SofDhMDs6Gi8cHyT3873pSgoASU',  # FARM FOMO
+  base58'4kwKSf4Bx2Wq8YxKnVZBhcEHyXzEtJ2pw7ixfJgirwf2',  # FARM MUNDOCRYPTO
+  base58'Ej7kEzxvUsoiMtJKiuFpMD9tC6qfCADpZynyW2vqcWW',   # FARM EGGPOINT
+  base58'5HGPPLj58XUx3ryMgkASJoqYq33zwBbTMf1CGxfKw6jp',  # FARM ENDO
+  base58'yDf4UTg4DS75sCNP7oC1HraTN4KHtqmd6WueTid4PF1',   # FARM MARVIN
+  base58'2R57nL7ftpuwbgdprcmAeA9i7ykLH6A4wzLkZHWPiHKc',  # FARM EGGMOON
+  base58'CE5cxMvz7865CyFZPFUmDiL4KRkYXP6b6oYgN3vmWdV5',  # FARM STREET
+  base58'5m5stLsMZSPomwxTTjJGMMEnjMafRMfap5vZyaLwgMKD',  # FARM KOLKHOZ
+  base58'46PdJcKzDuYfzLuLNjffM3F8jR8hL357V9AdGK2xN3kx',  # FARM FORKLOG
+  base58'ESaD2AREvgk7o4C9eQkZ8Nmau9BSHqgTK5ymHV36xocy'   # FARM CGU
+]
+let earnedAssetsAmount = earnedAssets.size()
+
+func tryGetInteger(key: String) = {
+  match getInteger(this, key) {
+      case b:Int => b
+      case _ => 0
+  }
+}
+
+func calculateCurrentAssetInterest(assetId: ByteVector, assetIdStr: String) = {
+  let totalStaked = tryGetInteger("global_puzzleStaked")
+
+  let tokenBalanceLastCheck = tryGetInteger("global_lastCheck_" + assetIdStr + "_earnings")
+  let currentTokenEarnings = max([tokenBalanceLastCheck, assetBalance(this, assetId)])
+
+  let newEarnings = currentTokenEarnings - tokenBalanceLastCheck
+  let newInterest = if (totalStaked == 0) then {0} else {fraction(newEarnings, scale, totalStaked)}
+  let lastCheckInterest = tryGetInteger("global_lastCheck_" + assetIdStr + "_interest")
+  lastCheckInterest + newInterest
+}
+
+func claimResult(address: Address) = {
+  let addressStr = address.toString()
+  let puzzleAmount = tryGetInteger(addressStr + "_puzzleStaked")
+
+  func handler(accum: List[IntegerEntry|ScriptTransfer], assetId: ByteVector) = {
+    let assetIdStr = assetId.toBase58String()
+
+    let currentTokenInterest = calculateCurrentAssetInterest(assetId, assetIdStr)
+    let currentTokenEarnings = max([tryGetInteger("global_lastCheck_" + assetIdStr + "_earnings"), assetBalance(this, assetId)])
+
+    let rewardAmount = fraction(puzzleAmount, (currentTokenInterest - tryGetInteger(addressStr + "_lastCheck_" + assetIdStr + "_interest")), scale)
+    
+    if (rewardAmount == 0) then {accum} else {
+      accum ++ [
+        IntegerEntry("global_lastCheck_" + assetIdStr + "_earnings", currentTokenEarnings - rewardAmount),
+        IntegerEntry("global_lastCheck_" + assetIdStr + "_interest", currentTokenInterest),
+        IntegerEntry(addressStr + "_lastCheck_" + assetIdStr + "_interest", currentTokenInterest),
+        ScriptTransfer(address, rewardAmount, assetId)
+      ]
+    }
+  }
+  FOLD<17>(earnedAssets, [], handler)
+}
+
+@Callable(i)
+func stake() = {
+  let addressStr = i.caller.toString()
+  let pmt = i.payments[0]
+  if (pmt.assetId.value() != puzzleId) then {throw("wrong asset attached")} else {
+    func handler(accum: List[IntegerEntry], assetId: ByteVector) = {
+      let assetIdStr = assetId.toBase58String()
+
+      let currentTokenInterest = calculateCurrentAssetInterest(assetId, assetIdStr)
+      accum ++ [
+        IntegerEntry("global_lastCheck_" + assetIdStr + "_earnings", assetBalance(this, assetId)),
+        IntegerEntry("global_lastCheck_" + assetIdStr + "_interest", currentTokenInterest),
+        IntegerEntry(addressStr + "_lastCheck_" + assetIdStr + "_interest", currentTokenInterest)
+      ]
+    }
+    let li = FOLD<17>(earnedAssets, [], handler)
+    li ++ [
+      IntegerEntry(addressStr + "_puzzleStaked", tryGetInteger(addressStr + "_puzzleStaked") + pmt.amount),
+      IntegerEntry("global_puzzleStaked", tryGetInteger("global_puzzleStaked") + pmt.amount)
+    ]
+  }
+}
+
+@Callable(i)
+func unstake(puzzleAmount: Int) = {
+  let addressStr = i.caller.toString()
+  let puzzleAvailable = tryGetInteger(addressStr + "_puzzleStaked")
+  if (puzzleAmount > puzzleAvailable) then {throw("you don't have PUZZLE available")} else {
+    claimResult(i.caller) ++ [
+      IntegerEntry(addressStr + "_puzzleStaked", puzzleAvailable - puzzleAmount),
+      IntegerEntry("global_puzzleStaked", tryGetInteger("global_puzzleStaked") - puzzleAmount)
+    ]
+  }
+}
+
+@Callable(i)
+func claim() = {
+  claimResult(i.caller)
+}
+
+@Verifier(tx)
+func verify() = sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey)
+        
