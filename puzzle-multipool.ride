@@ -80,7 +80,8 @@ func calculatePIssued(amount: Int, tokenId: ByteVector|Unit) = {
 func getMinPIssued(payments: List[AttachedPayment]) = {
   func handler(accum: Int, current: AttachedPayment) = {
     let PIssued = calculatePIssued(current.amount, current.assetId)
-    if ((accum == 0) || (PIssued < accum)) then {PIssued} else {accum}
+    if (PIssued == 0) then {throw("one of the tokens amounts is too low")}
+    else if ((accum == 0) || (PIssued < accum)) then {PIssued} else {accum}
   }
   let minPIssed = FOLD<10>(payments, 0, handler)
   minPIssed
@@ -473,6 +474,11 @@ func swap(assetOut: String, minimum: Int) = {
   }
 }
 
+@Callable(i)
+func flashLoan(assetIdStr: String, amount: Int, actionsStr: String) = {
+  let actions = actionsStr.split("|")
+  []
+}
 
 @Verifier(tx)
 func verify() = {
