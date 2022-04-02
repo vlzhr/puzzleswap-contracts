@@ -127,7 +127,7 @@ func handlePoolTokensAdd(PIssued: Int, payments: List[AttachedPayment], userAddr
     let paymentAmount = getTokenPaymentAmount(tokenId)
     let toReturn = (if (paymentAmount != 0) then {paymentAmount} else {0}) - Dk
 
-    let t = if (needChange) then {[ScriptTransfer(userAddress, toReturn, tokenId)]} else {[]}
+    let t = if (needChange && toReturn > 0) then {[ScriptTransfer(userAddress, toReturn, tokenId)]} else {[]}
     accum ++ t ++ [
       IntegerEntry("global_"+tokenId.getAssetString()+"_balance", Bk+Dk)
     ]
