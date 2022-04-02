@@ -122,7 +122,7 @@ func handlePoolTokensAdd(PIssued: Int, payments: List[AttachedPayment], userAddr
     let Bk = tryGetInteger("global_"+tokenId.getAssetString()+"_balance")
     let PSupply = tryGetInteger("global_poolToken_amount")
     let tokenDecimals = tryGetInteger("static_"+tokenId.getAssetString()+"_scale")
-    let Dk = fraction((fraction(PSupply + PIssued, tokenDecimals, PSupply, DOWN) - tokenDecimals), Bk, tokenDecimals, DOWN)  # deposited amount of token K
+    let Dk = fraction((fraction(PSupply + PIssued, tokenDecimals, PSupply, CEILING) - tokenDecimals), Bk, tokenDecimals, CEILING)  # deposited amount of token K
 
     let paymentAmount = getTokenPaymentAmount(tokenId)
     let toReturn = (if (paymentAmount != 0) then {paymentAmount} else {0}) - Dk
