@@ -238,9 +238,11 @@ func indexStakeResult(addressStr: String, amount: Int) = {
 func sum(accum: Int, n: String) = {accum + n.parseIntValue()}
 
 @Callable(i)
-func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: String, poolDomain: String, fee: Int) = {
+func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: String, poolDomain: String, poolOwner: String, fee: Int) = {
+  let poolOwnerAddress = Address(poolOwner.fromBase58String())
   if (this != i.caller) then {throw("admin only")}
   else if (poolDomain.size() > 13) then {throw("too large pool domain")}
+  else if (fee > 500 || fee < 50) then {throw("fee value must be between 50 and 500 (0.5-5%)")}
   else {
     let assetIdsStrLi = assetIdsStr.split(",")
     let assetIdsLi = FOLD<10>(assetIdsStrLi, [], addAssetBytesToList)
@@ -271,6 +273,7 @@ func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: Strin
         IntegerEntry("static_tokensAmount", assetIdsLi.size()),
         StringEntry("static_poolDomain", poolDomain),
         StringEntry("static_baseTokenId", baseTokenIdStr),
+        StringEntry("static_poolOwner", poolOwner),
         IntegerEntry("static_fee", fee)
       ]
     }
@@ -369,7 +372,11 @@ func unstakeIndex(puzzleAmount: Int) = {
   let addressStr = i.originCaller.toString()
 
   let puzzleAvailable = tryGetInteger(addressStr + "_indexStaked")
-  if (puzzleAmount > puzzleAvailable) then {throw("you don't have index tokens available")} else {
+  if (puzzleAmount > puzzleAvailable) then {throw("you don't have index tokens available")} 
+  else if (isShutdown()) then {
+    throw("contract is on stop")
+  } 
+  else {
     claimResult(i.originCaller) ++ [
       IntegerEntry(addressStr + "_indexStaked", puzzleAvailable - puzzleAmount),
       IntegerEntry("global_indexStaked", tryGetInteger("global_indexStaked") - puzzleAmount),
@@ -380,7 +387,11 @@ func unstakeIndex(puzzleAmount: Int) = {
 
 @Callable(i)
 func claimIndexRewards() = {
-  claimResult(i.caller)
+  if (isShutdown()) then {
+    throw("contract is on stop")
+  } else {
+    claimResult(i.caller)
+  }
 }
 
 
@@ -390,6 +401,9 @@ func redeemIndex(sendToOrigin: Boolean) = {
   let pmt = i.payments[0]
   if (pmt.assetId != tryGetBinary("global_poolToken_id")) then {
     throw("please attach pool share token")
+  } 
+  else if (isShutdown()) then {
+    throw("contract is on stop")
   } else {
     let PRedeemed = pmt.amount
     let result = handlePoolTokensRedeem(PRedeemed, if (sendToOrigin) then {i.originCaller} else {i.caller})
@@ -421,6 +435,9 @@ func swap(assetOut: String, minimum: Int) = {
   } 
   else if (AssetOutBalance - AmountOut < 0) then {
     throw("contract is out of reserves")
+  }
+  else if (isShutdown()) then {
+    throw("contract is on stop")
   }
   else {
     let newBalanceIn = AssetInBalance + AmountIn
