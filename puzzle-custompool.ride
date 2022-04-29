@@ -52,7 +52,7 @@ let Scales = FOLD<10>(assetIds, [], addAssetScaleToList)
 
 let Fee = tryGetInteger("static_fee")
 
-let AssetsWeightsDecimals = 2
+let AssetsWeightsDecimals = 4
 let Scale = 10000
 let Scale8 = 1_0000_0000
 let FeeScale = 10000
@@ -274,7 +274,7 @@ func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: Strin
       }
     }
 
-    if (assetWeightsSum != 100) then {throw("sum of token weights must be equal to 100")} else {
+    if (assetWeightsSum != 10000) then {throw("sum of token weights must be equal to 10000")} else {
       FOLD<10>([0,1,2,3,4,5,6,7,8,9], [], addTokenDataEntries) ++ [
         StringEntry("static_tokenIds", assetIdsStr),
         StringEntry("static_tokenWeights", assetWeightsStr),
