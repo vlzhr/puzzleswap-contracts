@@ -5,6 +5,9 @@
 let usdnAssetId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
 let puzzleAssetId = base58'HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS'
 
+let masterAddress = Address(base58'3PLjwHcz9NEuaTo63NZR9B9okQiKQxZSbmf')
+let masterPubKey = base58'4z8CKSYQBKkzx7PBb5uBP1YPa6YAHRNTApW1sQVHT5eU'
+
 
 func tryGetInteger(key: String) = {
   match getInteger(this, key) {
@@ -167,7 +170,7 @@ func calculateOutAmount(AmountIn: Int, assetIn: ByteVector|Unit, assetOut: ByteV
   let IndexIn = assetIds.indexOf(assetIn).value()
   let IndexOut = assetIds.indexOf(assetOut).value()
   
-  if (IndexIn == IndexOut) then { throw("wrong tokens pair") } 
+  if (IndexIn == IndexOut) then { AmountIn } 
   else {
     fraction( BalanceOut, 
               Scale8 * Scale8 - 
@@ -500,7 +503,7 @@ func verify() = {
   if (isShutdown()) then {
     false
   } else {
-    sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey)
+    sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey) || sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey)
   }
 }
 
