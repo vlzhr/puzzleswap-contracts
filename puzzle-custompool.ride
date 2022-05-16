@@ -339,7 +339,8 @@ func init() = {
         IntegerEntry("global_wasInited", 1),
         BinaryEntry("global_poolToken_id", poolTokenId),
         StringEntry("static_poolToken_idStr", poolTokenId.getAssetString()),
-        ScriptTransfer(i.caller, initialPoolTokens, poolTokenId)
+        IntegerEntry(i.caller.toString() + "_indexStaked", initialPoolTokens),
+        IntegerEntry("global_indexStaked", initialPoolTokens)
       ]
     }
 
