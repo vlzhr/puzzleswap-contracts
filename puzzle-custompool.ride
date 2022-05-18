@@ -429,6 +429,7 @@ func redeemIndex(sendToOrigin: Boolean) = {
 
 @Callable(i)
 func swap(assetOut: String, minimum: Int) = {
+  # throw("stop")
   # markup all assets
   let pmt = i.payments[0].value()
   let AmountIn = i.payments[0].amount.value()
@@ -474,7 +475,7 @@ func swap(assetOut: String, minimum: Int) = {
     # prepare state changes
     let assetInChange = IntegerEntry("global_"+AssetIn.getAssetString()+"_balance", newBalanceIn)
     let assetOutChange = IntegerEntry("global_"+assetOut+"_balance", newBalanceOut)
-    let feeAssetOutChange = if (newBalanceFeeAsset != unit) then {IntegerEntry("global_"+assetOut+"_balance", feeAssetOutBalance)} else {StringEntry("hello", "world")}
+    let feeAssetOutChange = if (newBalanceFeeAsset != unit) then {IntegerEntry("global_"+feeAssetOut.getAssetString()+"_balance", feeAssetOutBalance)} else {StringEntry("hello", "world")}
 
     (
       [
