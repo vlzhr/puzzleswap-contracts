@@ -431,7 +431,7 @@ func redeemIndex(sendToOrigin: Boolean) = {
 func swap(assetOut: String, minimum: Int) = {
   # throw("stop")
   # markup all assets
-  let pmt = i.payments[0].value()
+  let pmt = if (i.payments.size() == 1) then {i.payments[0].value()} else {throw("please attach exactly one payment")}
   let AmountIn = i.payments[0].amount.value()
   let AssetIn = pmt.assetId
   let AssetOut = assetOut.getAssetBytes()
@@ -448,12 +448,6 @@ func swap(assetOut: String, minimum: Int) = {
   # calculate "out" numbers
   let AmountOut = calculateOutAmount(cleanAmountIn, AssetIn, AssetOut, AssetInBalance, AssetOutBalance)
   let feeAmountOut = calculateOutAmount(feeAmountIn, AssetIn, feeAssetOut, AssetInBalance, feeAssetOutBalance)
-  
-  # top up protocol fee
-  # TODO: top up if feeAsset = PUZZLE
-  let creatorFee = fraction(feeAmountOut, 1, 10)
-  let protocolFee = fraction(feeAmountOut, 4, 10)
-  strict stakingTopUp = reentrantInvoke(Address(base58'3PFTbywqxtFfukX3HyT881g4iW5K4QL3FAS'), "topUpReward", [], [AttachedPayment(feeAssetOut, protocolFee)])
 
   # do all the verifications
   # TODO: verification that realPrice <= marketPrice (just in case)
@@ -467,13 +461,19 @@ func swap(assetOut: String, minimum: Int) = {
     throw("contract is on stop")
   }
   else {
+    # top up protocol fee
+    # TODO: top up if feeAsset = PUZZLE
+    let creatorFee = fraction(feeAmountOut, 1, 10)
+    let protocolFee = fraction(feeAmountOut, 4, 10)
+    strict stakingTopUp = reentrantInvoke(Address(base58'3PFTbywqxtFfukX3HyT881g4iW5K4QL3FAS'), "topUpReward", [], [AttachedPayment(feeAssetOut, protocolFee)])
+  
     # calculate state changes
     let newBalanceIn = AssetInBalance + AmountIn
     let newBalanceOut = AssetOutBalance - AmountOut
     let newBalanceFeeAsset = if (feeAssetOut != AssetIn && feeAssetOut != AssetOut) then {feeAssetOutBalance - feeAmountOut} else {unit}
 
     # prepare state changes
-    let assetInChange = IntegerEntry("global_"+AssetIn.getAssetString()+"_balance", newBalanceIn)
+    let assetInChange = if (AssetOut != AssetIn) then {IntegerEntry("global_"+AssetIn.getAssetString()+"_balance", newBalanceIn)} else {StringEntry("hello", "world")}
     let assetOutChange = IntegerEntry("global_"+assetOut+"_balance", newBalanceOut)
     let feeAssetOutChange = if (newBalanceFeeAsset != unit) then {IntegerEntry("global_"+feeAssetOut.getAssetString()+"_balance", feeAssetOutBalance)} else {StringEntry("hello", "world")}
 
