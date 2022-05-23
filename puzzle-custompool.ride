@@ -4,7 +4,10 @@
 
 let usdnAssetId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
 let puzzleAssetId = base58'HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS'
+let usdnAssetIdStr = "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p"
+let puzzleAssetIdStr = "HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS"
 
+let parentPoolAddress = Address(base58'3PFDgzu1UtswAkCMxqqQjbTeHaX4cMab8Kh')
 let masterAddress = Address(base58'3PLjwHcz9NEuaTo63NZR9B9okQiKQxZSbmf')
 let masterPubKey = base58'4z8CKSYQBKkzx7PBb5uBP1YPa6YAHRNTApW1sQVHT5eU'
 
@@ -95,16 +98,29 @@ func getMinPIssued(payments: List[AttachedPayment]) = {
 }
 
 func calculateUsdnValue(assetId: ByteVector|Unit, amount: Int, aBalance: Int, givenUsdnBalance: Int|Unit) = {
-  # to handle total volume value|Unit
-  let usdnWeight = AssetsWeights[assetIds.indexOf(usdnAssetId).value()]
+  let usdnInPool = assetIds.indexOf(usdnAssetId)
   let assetWeight = AssetsWeights[assetIds.indexOf(assetId).value()]
 
-  let usdnBalance = match (givenUsdnBalance) {
-    case x: Int => givenUsdnBalance 
-    case _ => tryGetInteger("global_"+usdnAssetId.getAssetString()+"_balance")
-  }
+  if (usdnInPool == unit) then {
+    # no USDN in pool - use PUZZLE to calculate
+    let puzzleWeight = AssetsWeights[assetIds.indexOf(puzzleAssetId).value()]
 
-  fraction( amount, usdnBalance.value() / usdnWeight, aBalance / assetWeight )
+    let puzzleBalance = tryGetInteger("global_"+puzzleAssetIdStr+"_balance")
+
+    let amountInPuzzle = fraction( amount, puzzleBalance / puzzleWeight, aBalance / assetWeight )
+    let puzzlePrice = getIntegerValue(parentPoolAddress, "global_lastPuzzlePrice")
+    fraction(amountInPuzzle*puzzlePrice, 1, Scale8)
+  } else {
+    # USDN in pool
+    let usdnWeight = AssetsWeights[assetIds.indexOf(usdnAssetId).value()]
+
+    let usdnBalance = match (givenUsdnBalance) {
+      case x: Int => givenUsdnBalance 
+      case _ => tryGetInteger("global_"+usdnAssetId.getAssetString()+"_balance")
+    }
+
+    fraction( amount, usdnBalance.value() / usdnWeight, aBalance / assetWeight )
+  }
 }
 
 func checkTokensValidity(payments: List[AttachedPayment]) = {
@@ -254,12 +270,17 @@ func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: Strin
   else if (poolDomain.size() > 13) then {throw("too large pool domain")}
   else if (fee > 500 || fee < 50) then {throw("fee value must be between 50 and 500 (0.5-5%)")}
   # TODO: check correctness of poolOwner, uniqueness of poolDomain, existance of USDN or PUZZLE in assetIdsStr
+  else if (assetIdsStr.indexOf(puzzleAssetIdStr) == unit && assetIdsStr.indexOf(usdnAssetIdStr) == unit) then {
+    throw("pool must have USDN or PUZZLE in the composition")
+  }
   else {
     let assetIdsStrLi = assetIdsStr.split(",")
     let assetIdsLi = FOLD<10>(assetIdsStrLi, [], addAssetBytesToList)
 
     let assetWeightsStrLi = assetWeightsStr.split(",")
     let assetWeightsSum = FOLD<10>(assetWeightsStrLi, 0, sum)
+
+    let feeAssetStr = if (assetIdsStr.indexOf(usdnAssetIdStr) == unit) then {puzzleAssetIdStr} else {usdnAssetIdStr}
 
     func addTokenDataEntries(accum: List[IntegerEntry], assetNum: Int) = {
       if (assetNum >= assetIdsLi.size()) then {
@@ -280,6 +301,7 @@ func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: Strin
     if (assetWeightsSum != 10000) then {throw("sum of token weights must be equal to 10000")} else {
       FOLD<10>([0,1,2,3,4,5,6,7,8,9], [], addTokenDataEntries) ++ [
         StringEntry("static_tokenIds", assetIdsStr),
+        StringEntry("static_feeToken", feeAssetStr),
         StringEntry("static_tokenWeights", assetWeightsStr),
         IntegerEntry("static_tokensAmount", assetIdsLi.size()),
         StringEntry("static_poolDomain", poolDomain),
@@ -436,7 +458,8 @@ func swap(assetOut: String, minimum: Int) = {
   let AssetIn = pmt.assetId
   let AssetOut = assetOut.getAssetBytes()
   let feeAssetIn = AssetIn
-  let feeAssetOut = usdnAssetId
+  let feeAssetOutStr = tryGetString("static_feeToken")
+  let feeAssetOut = if (feeAssetOutStr == "") then {usdnAssetId} else {feeAssetOutStr.fromBase58String()}
 
   # markup all asset numbers
   let AssetInBalance = tryGetInteger("global_"+AssetIn.getAssetString()+"_balance")
@@ -454,6 +477,9 @@ func swap(assetOut: String, minimum: Int) = {
   if (AmountOut < minimum) then {
     throw("amount to recieve is lower than given one: " + AmountOut.toString())
   } 
+  else if (AssetOut == AssetIn) then {
+    throw("this swap is not allowed")
+  }
   else if (AssetOutBalance - AmountOut < 0) then {
     throw("contract is out of reserves")
   }
@@ -465,23 +491,25 @@ func swap(assetOut: String, minimum: Int) = {
     # TODO: top up if feeAsset = PUZZLE
     let creatorFee = fraction(feeAmountOut, 1, 10)
     let protocolFee = fraction(feeAmountOut, 4, 10)
-    strict stakingTopUp = reentrantInvoke(Address(base58'3PFTbywqxtFfukX3HyT881g4iW5K4QL3FAS'), "topUpReward", [], [AttachedPayment(feeAssetOut, protocolFee)])
+    strict stakingTopUp = if (feeAssetOut == usdnAssetId) then {
+      reentrantInvoke(Address(base58'3PFTbywqxtFfukX3HyT881g4iW5K4QL3FAS'), "topUpReward", [], [AttachedPayment(feeAssetOut, protocolFee)])
+    } else {unit}
   
     # calculate state changes
-    let newBalanceIn = AssetInBalance + AmountIn
-    let newBalanceOut = AssetOutBalance - AmountOut
+    let newBalanceIn = AssetInBalance + AmountIn - (if (AssetIn == feeAssetOut) then {feeAmountOut} else {0})
+    let newBalanceOut = AssetOutBalance - AmountOut - (if (AssetOut == feeAssetOut) then {feeAmountOut} else {0})
     let newBalanceFeeAsset = if (feeAssetOut != AssetIn && feeAssetOut != AssetOut) then {feeAssetOutBalance - feeAmountOut} else {unit}
 
     # prepare state changes
-    let assetInChange = if (AssetOut != AssetIn) then {IntegerEntry("global_"+AssetIn.getAssetString()+"_balance", newBalanceIn)} else {StringEntry("hello", "world")}
+    let assetInChange = IntegerEntry("global_"+AssetIn.getAssetString()+"_balance", newBalanceIn)
     let assetOutChange = IntegerEntry("global_"+assetOut+"_balance", newBalanceOut)
     let feeAssetOutChange = if (newBalanceFeeAsset != unit) then {IntegerEntry("global_"+feeAssetOut.getAssetString()+"_balance", feeAssetOutBalance)} else {StringEntry("hello", "world")}
 
     (
       [
         # change state with new balance values
-        assetInChange,
         assetOutChange,
+        assetInChange,
         feeAssetOutChange,
 
         # send amountOut to the user
