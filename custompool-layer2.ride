@@ -1,0 +1,142 @@
+{-# STDLIB_VERSION 5 #-}
+{-# CONTENT_TYPE DAPP #-}
+{-# SCRIPT_TYPE ACCOUNT #-}
+
+func isShutdown() = {
+  match getBoolean(Address(base58'3PEpv9hRFWEEBU22WRnLsw1bH4YGtcU728o'), "is_shutdown") {
+    case x: Boolean => x
+    case _ => false
+  }
+}
+
+func getAssetBytes(assetIdStr: String) = {
+  if (assetIdStr == "WAVES") then {unit} else {assetIdStr.fromBase58String()}
+}
+
+func getAssetString(assetId: ByteVector|Unit) = {
+  match assetId {
+    case b:ByteVector => assetId.value().toBase58String()
+    case _ => "WAVES"
+  }
+}
+
+func getTokenBalance(assetId: ByteVector|Unit) = {
+  match (assetId) {
+      case t:ByteVector => assetBalance(this, t)
+      case _ => wavesBalance(this).available
+    }
+}
+
+func addAssetBytesToList(accum: List[ByteVector], item: String) = { accum ++ [item.getAssetBytes()] }
+
+
+@Callable(i)
+func generateIndexWithOneTokenAndStake(mainAddressStr: String) = {
+  let mainAddress = Address(mainAddressStr.fromBase58String())
+  let assetIds = FOLD<10>(getStringValue(mainAddress, "static_tokenIds").split(","), [], addAssetBytesToList)
+  let baseAssetId = getStringValue(mainAddress, "static_baseTokenId").getAssetBytes()
+  let secondaryAssetIds = assetIds.removeByIndex(assetIds.indexOf(baseAssetId).value())
+  let poolIndexId = getBinaryValue(mainAddress, "global_poolToken_id")
+
+  let tokenId = i.payments[0].assetId
+  let amount = i.payments[0].amount / 10000
+  if (tokenId != baseAssetId) then {throw("base asset only")} else {
+    func handler(accum: List[AttachedPayment], assetId: ByteVector) = {
+      let assetIdStr = assetId.getAssetString()
+      let assetWeight = getIntegerValue(mainAddress, "static_" + assetIdStr + "_weight")
+      strict in = match reentrantInvoke(mainAddress, "swap", [assetId.getAssetString(), 0], [AttachedPayment(baseAssetId, amount * assetWeight)]) {
+            case x: Int => x
+            case _ => 0
+      }
+      accum ++ [AttachedPayment(assetId, in)]
+    }
+
+    let baseAssetWeight = getIntegerValue(mainAddress, "static_" + baseAssetId.getAssetString() + "_weight")
+    strict exchangeInvokes = FOLD<9>(secondaryAssetIds, [AttachedPayment(baseAssetId, amount * baseAssetWeight)], handler)
+    strict PIssuedAmount = match reentrantInvoke(mainAddress, "generateIndex", [false], exchangeInvokes) {
+      case x: Int => x
+      case _ => 0
+    }
+    strict stakeInvoke = reentrantInvoke(mainAddress, "stakeIndex", [], [AttachedPayment(poolIndexId, PIssuedAmount)])
+
+    []
+  }
+}
+
+@Callable(i)
+func unstakeIndexAndRedeemAsOneToken(indexAmount: Int, mainAddressStr: String) = {
+  let mainAddress = Address(mainAddressStr.fromBase58String())
+  let assetIds = FOLD<10>(getStringValue(mainAddress, "static_tokenIds").split(","), [], addAssetBytesToList)
+  let baseAssetId = getStringValue(mainAddress, "static_baseTokenId").getAssetBytes()
+  let secondaryAssetIds = assetIds.removeByIndex(assetIds.indexOf(baseAssetId).value())
+  let poolIndexId = getBinaryValue(mainAddress, "global_poolToken_id")
+
+  func foldHandler1(accum: List[Int], assetId: ByteVector) = {
+    accum ++ [getTokenBalance(assetId)]
+  }
+
+  strict balancesBefore = FOLD<10>(assetIds, [], foldHandler1)
+  strict baseAssetBefore = getTokenBalance(baseAssetId)
+  strict unstakeInvoke = reentrantInvoke(mainAddress, "unstakeAndRedeemIndex", [indexAmount], [])
+  strict balancesAfter = FOLD<10>(assetIds, [], foldHandler1)
+  strict baseAssetAfter = getTokenBalance(baseAssetId)
+
+  func foldHandler2(accum: Int, assetId: ByteVector) = {
+    let assetNum = assetIds.indexOf(assetId).value()
+    let amount = balancesAfter[assetNum] - balancesBefore[assetNum]
+    strict in = if (assetId == baseAssetId) then {
+      amount
+    } else {
+      match reentrantInvoke(mainAddress, "swap", [baseAssetId.getAssetString(), 0], [AttachedPayment(assetId, amount)]) {
+        case x: Int => x
+        case _ => 0
+      }
+    }
+    accum + in
+  }
+
+  strict eggAmount = FOLD<9>(assetIds, 0, foldHandler2)
+  [
+    ScriptTransfer(i.caller, eggAmount + (baseAssetAfter - baseAssetBefore), baseAssetId)
+  ]
+}
+
+@Callable(i)
+func generateIndexAndStake(mainAddressStr: String) = {
+  let mainAddress = Address(mainAddressStr.fromBase58String())
+  let assetIds = FOLD<10>(getStringValue(mainAddress, "static_tokenIds").split(","), [], addAssetBytesToList)
+  let baseAssetId = getStringValue(mainAddress, "static_baseTokenId").getAssetBytes()
+  let secondaryAssetIds = assetIds.removeByIndex(assetIds.indexOf(baseAssetId).value())
+  let poolIndexId = getBinaryValue(mainAddress, "global_poolToken_id")
+
+  strict PIssuedAmount = match reentrantInvoke(mainAddress, "generateIndex", [true], i.payments) {
+    case x: Int => x
+    case _ => 0
+  }
+
+  strict stakeInvoke = reentrantInvoke(mainAddress, "stakeIndex", [], [AttachedPayment(poolIndexId, PIssuedAmount)])
+  []
+}
+
+@Callable(i)
+func unstakeAndRedeemIndex(amount: Int, mainAddressStr: String) = {
+  let mainAddress = Address(mainAddressStr.fromBase58String())
+  let assetIds = FOLD<10>(getStringValue(mainAddress, "static_tokenIds").split(","), [], addAssetBytesToList)
+  let baseAssetId = getStringValue(mainAddress, "static_baseTokenId").getAssetBytes()
+  let secondaryAssetIds = assetIds.removeByIndex(assetIds.indexOf(baseAssetId).value())
+  let poolIndexId = getBinaryValue(mainAddress, "global_poolToken_id")
+  
+  strict unstakeInvoke = reentrantInvoke(mainAddress, "unstakeIndex", [amount], i.payments)
+  strict redeemInvoke = reentrantInvoke(mainAddress, "redeemIndex", [true], [AttachedPayment(poolIndexId, amount)])
+  []
+}
+
+@Verifier(tx)
+func verify() = {
+  if (isShutdown()) then {
+    false
+  } else {
+    sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey)
+  }
+}
+
