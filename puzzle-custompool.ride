@@ -457,19 +457,20 @@ func swap(assetOut: String, minimum: Int) = {
   let AmountIn = i.payments[0].amount.value()
   let AssetIn = pmt.assetId
   let AssetOut = assetOut.getAssetBytes()
-  let feeAssetIn = AssetIn
   let feeAssetOutStr = tryGetString("static_feeToken")
   let feeAssetOut = if (feeAssetOutStr == "") then {usdnAssetId} else {feeAssetOutStr.fromBase58String()}
 
   # markup all asset numbers
   let AssetInBalance = tryGetInteger("global_"+AssetIn.getAssetString()+"_balance")
   let AssetOutBalance = tryGetInteger("global_"+assetOut+"_balance")
-  let feeAssetOutBalance = tryGetInteger("global_"+feeAssetOut.getAssetString()+"_balance")
   let feeAmountIn = fraction(AmountIn, Fee, FeeScale)
   let cleanAmountIn = AmountIn - feeAmountIn
 
   # calculate "out" numbers
   let AmountOut = calculateOutAmount(cleanAmountIn, AssetIn, AssetOut, AssetInBalance, AssetOutBalance)
+  let AssetOutBalance2 = AssetOutBalance - AmountOut
+  let AssetInBalance2 = AssetInBalance + cleanAmountIn
+  let feeAssetOutBalance = if (feeAssetOut == AssetIn) then {AssetInBalance2} else if (feeAssetOut == AssetOut) then {AssetOutBalance2} else {tryGetInteger("global_"+feeAssetOut.getAssetString()+"_balance")}
   let feeAmountOut = calculateOutAmount(feeAmountIn, AssetIn, feeAssetOut, AssetInBalance, feeAssetOutBalance)
 
   # do all the verifications
@@ -488,7 +489,6 @@ func swap(assetOut: String, minimum: Int) = {
   }
   else {
     # top up protocol fee
-    # TODO: top up if feeAsset = PUZZLE
     let creatorFee = fraction(feeAmountOut, 1, 10)
     let protocolFee = fraction(feeAmountOut, 4, 10)
     strict stakingTopUp = if (feeAssetOut == usdnAssetId) then {
@@ -496,8 +496,8 @@ func swap(assetOut: String, minimum: Int) = {
     } else {unit}
   
     # calculate state changes
-    let newBalanceIn = AssetInBalance + AmountIn - (if (AssetIn == feeAssetOut) then {feeAmountOut} else {0})
-    let newBalanceOut = AssetOutBalance - AmountOut - (if (AssetOut == feeAssetOut) then {feeAmountOut} else {0})
+    let newBalanceIn = AssetInBalance2 - (if (AssetIn == feeAssetOut) then {feeAmountOut} else {0})
+    let newBalanceOut = AssetOutBalance2 - (if (AssetOut == feeAssetOut) then {feeAmountOut} else {0})
     let newBalanceFeeAsset = if (feeAssetOut != AssetIn && feeAssetOut != AssetOut) then {feeAssetOutBalance - feeAmountOut} else {unit}
 
     # prepare state changes
@@ -521,7 +521,7 @@ func swap(assetOut: String, minimum: Int) = {
 
         # update volume stats
         IntegerEntry("global_volume", tryGetInteger("global_volume") + calculateUsdnValue(AssetIn, AmountIn, AssetInBalance, feeAssetOutBalance))
-      ], 
+      ] ++ if (stakingTopUp == unit) then {[Burn(feeAssetOut, protocolFee)]} else {[]}, 
       AmountOut
     )
   }
@@ -536,5 +536,4 @@ func verify() = {
     sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey) || sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey)
   }
 }
-
 
