@@ -186,7 +186,7 @@ func calculateOutAmount(AmountIn: Int, assetIn: ByteVector|Unit, assetOut: ByteV
   let IndexIn = assetIds.indexOf(assetIn).value()
   let IndexOut = assetIds.indexOf(assetOut).value()
   
-  if (IndexIn == IndexOut) then { AmountIn } 
+  if (IndexIn == IndexOut) then { throw("inalid tokens pair") }
   else {
     fraction( BalanceOut, 
               Scale8 * Scale8 - 
@@ -451,6 +451,10 @@ func redeemIndex(sendToOrigin: Boolean) = {
 
 @Callable(i)
 func swap(assetOut: String, minimum: Int) = {
+  if (isShutdown()) then {
+    throw("contract is on stop")
+  }
+  else
   # throw("stop")
   # markup all assets
   let pmt = if (i.payments.size() == 1) then {i.payments[0].value()} else {throw("please attach exactly one payment")}
@@ -468,50 +472,44 @@ func swap(assetOut: String, minimum: Int) = {
 
   # calculate "out" numbers
   let AmountOut = calculateOutAmount(cleanAmountIn, AssetIn, AssetOut, AssetInBalance, AssetOutBalance)
-  let AssetOutBalance2 = AssetOutBalance - AmountOut
-  let AssetInBalance2 = AssetInBalance + cleanAmountIn
-  let feeAssetOutBalance = if (feeAssetOut == AssetIn) then {AssetInBalance2} else if (feeAssetOut == AssetOut) then {AssetOutBalance2} else {tryGetInteger("global_"+feeAssetOut.getAssetString()+"_balance")}
-  let feeAmountOut = calculateOutAmount(feeAmountIn, AssetIn, feeAssetOut, AssetInBalance, feeAssetOutBalance)
-
-  # do all the verifications
-  # TODO: verification that realPrice <= marketPrice (just in case)
   if (AmountOut < minimum) then {
     throw("amount to recieve is lower than given one: " + AmountOut.toString())
   } 
-  else if (AssetOut == AssetIn) then {
-    throw("this swap is not allowed")
-  }
   else if (AssetOutBalance - AmountOut < 0) then {
     throw("contract is out of reserves")
   }
-  else if (isShutdown()) then {
-    throw("contract is on stop")
-  }
-  else {
+  else
+  let AssetInBalance2 = AssetInBalance + cleanAmountIn
+  let AssetOutBalance2 = AssetOutBalance - AmountOut  
+
+  let feeAssetOutBalance = if(AssetIn == feeAssetOut) then AssetInBalance2 else if (feeAssetOut == AssetOut) then AssetOutBalance2 else tryGetInteger("global_"+feeAssetOut.getAssetString()+"_balance")
+  let feeAmountOut = if(AssetIn == feeAssetOut) then feeAmountIn else calculateOutAmount(feeAmountIn, AssetIn, feeAssetOut, AssetInBalance2, feeAssetOutBalance)
+
+  # calculate state changes
+  let newBalanceIn = AssetInBalance2 + (if (AssetIn == feeAssetOut) then {0} else {feeAmountIn})
+  let newBalanceOut = AssetOutBalance2 - (if (AssetIn == feeAssetOut) then {0} else if (AssetOut == feeAssetOut) then {feeAmountOut} else {0})
+  let newBalanceFeeAsset = if (feeAssetOut != AssetIn && feeAssetOut != AssetOut) then {feeAssetOutBalance - feeAmountOut} else {unit}
+
+  # do all the verifications
+  # TODO: verification that realPrice <= marketPrice (just in case)
     # top up protocol fee
     let creatorFee = fraction(feeAmountOut, 1, 10)
     let protocolFee = fraction(feeAmountOut, 4, 10)
     strict stakingTopUp = if (feeAssetOut == usdnAssetId) then {
       reentrantInvoke(Address(base58'3PFTbywqxtFfukX3HyT881g4iW5K4QL3FAS'), "topUpReward", [], [AttachedPayment(feeAssetOut, protocolFee)])
     } else {unit}
-  
-    # calculate state changes
-    let newBalanceIn = AssetInBalance2 - (if (AssetIn == feeAssetOut) then {feeAmountOut} else {0})
-    let newBalanceOut = AssetOutBalance2 - (if (AssetOut == feeAssetOut) then {feeAmountOut} else {0})
-    let newBalanceFeeAsset = if (feeAssetOut != AssetIn && feeAssetOut != AssetOut) then {feeAssetOutBalance - feeAmountOut} else {unit}
 
     # prepare state changes
-    let assetInChange = IntegerEntry("global_"+AssetIn.getAssetString()+"_balance", newBalanceIn)
-    let assetOutChange = IntegerEntry("global_"+assetOut+"_balance", newBalanceOut)
-    let feeAssetOutChange = if (newBalanceFeeAsset != unit) then {IntegerEntry("global_"+feeAssetOut.getAssetString()+"_balance", feeAssetOutBalance)} else {StringEntry("hello", "world")}
+    let assetInChange = [IntegerEntry("global_"+AssetIn.getAssetString()+"_balance", newBalanceIn)]
+    let assetOutChange = [IntegerEntry("global_"+assetOut+"_balance", newBalanceOut)]
+    let feeAssetOutChange = if (newBalanceFeeAsset != unit) then [IntegerEntry("global_"+feeAssetOut.getAssetString()+"_balance", feeAssetOutBalance)] else []
 
     (
+      # change state with new balance values
+      assetOutChange++
+      assetInChange++
+      feeAssetOutChange++
       [
-        # change state with new balance values
-        assetOutChange,
-        assetInChange,
-        feeAssetOutChange,
-
         # send amountOut to the user
         ScriptTransfer(i.caller, AmountOut, AssetOut),
 
@@ -521,10 +519,9 @@ func swap(assetOut: String, minimum: Int) = {
 
         # update volume stats
         IntegerEntry("global_volume", tryGetInteger("global_volume") + calculateUsdnValue(AssetIn, AmountIn, AssetInBalance, feeAssetOutBalance))
-      ] ++ if (stakingTopUp == unit) then {[Burn(feeAssetOut, protocolFee)]} else {[]}, 
+      ] ++ (if (stakingTopUp == unit) then {[Burn(feeAssetOut, protocolFee)]} else {[]}), 
       AmountOut
     )
-  }
 }
 
 
@@ -536,4 +533,3 @@ func verify() = {
     sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey) || sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey)
   }
 }
-
