@@ -488,7 +488,7 @@ func swap(assetOut: String, minimum: Int) = {
   # calculate state changes
   let newBalanceIn = AssetInBalance2 + (if (AssetIn == feeAssetOut) then {0} else {feeAmountIn})
   let newBalanceOut = AssetOutBalance2 - (if (AssetIn == feeAssetOut) then {0} else if (AssetOut == feeAssetOut) then {feeAmountOut} else {0})
-  let newBalanceFeeAsset = if (feeAssetOut != AssetIn && feeAssetOut != AssetOut) then {feeAssetOutBalance - feeAmountOut} else {unit}
+  let feeAssetOutChange = if (feeAssetOut != AssetIn && feeAssetOut != AssetOut) then [IntegerEntry("global_"+feeAssetOut.getAssetString()+"_balance", feeAssetOutBalance - feeAmountOut)] else []
 
   # do all the verifications
   # TODO: verification that realPrice <= marketPrice (just in case)
@@ -502,7 +502,6 @@ func swap(assetOut: String, minimum: Int) = {
     # prepare state changes
     let assetInChange = [IntegerEntry("global_"+AssetIn.getAssetString()+"_balance", newBalanceIn)]
     let assetOutChange = [IntegerEntry("global_"+assetOut+"_balance", newBalanceOut)]
-    let feeAssetOutChange = if (newBalanceFeeAsset != unit) then [IntegerEntry("global_"+feeAssetOut.getAssetString()+"_balance", feeAssetOutBalance)] else []
 
     (
       # change state with new balance values
