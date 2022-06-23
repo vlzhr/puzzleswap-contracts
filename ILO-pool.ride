@@ -327,7 +327,7 @@ func deInit() = {
 @Callable(i)
 func setLock(lock: Boolean) = {
   if (i.caller == Address(poolAdmin)) then {
-    [IntegerEntry("global_isLocked", 1)]
+    [IntegerEntry("global_isLocked", if (lock) then {1} else {0})]
   } else {
     throw("ILO admin only")
   }
