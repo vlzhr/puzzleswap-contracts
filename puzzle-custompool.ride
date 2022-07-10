@@ -246,14 +246,14 @@ func claimResult(address: Address) = {
   }
   
   let accum = FOLD<10>(earnedAssets, ([], 0), handler)
-  accum._1 ++ [
+  (accum._1 ++ [
     IntegerEntry(addressStr+"_claimedRewardValue", tryGetInteger(addressStr+"_claimedRewardValue") + accum._2),
     IntegerEntry(addressStr+"_lastClaim", lastBlock.timestamp)
-  ]
+  ], accum._2)
 }
 
 func indexStakeResult(addressStr: String, amount: Int) = {
-    let li = claimResult(addressStr.addressFromStringValue())
+    let li = claimResult(addressStr.addressFromStringValue())._1
     li ++ [
       IntegerEntry(addressStr + "_indexStaked", tryGetInteger(addressStr + "_indexStaked") + amount),
       IntegerEntry("global_indexStaked", tryGetInteger("global_indexStaked") + amount)
@@ -411,7 +411,7 @@ func unstakeIndex(puzzleAmount: Int) = {
     throw("contract is on stop")
   } 
   else {
-    claimResult(i.originCaller) ++ [
+    claimResult(i.originCaller)._1 ++ [
       IntegerEntry(addressStr + "_indexStaked", puzzleAvailable - puzzleAmount),
       IntegerEntry("global_indexStaked", tryGetInteger("global_indexStaked") - puzzleAmount),
       ScriptTransfer(i.caller, puzzleAmount, getBinaryValue("global_poolToken_id"))
@@ -426,6 +426,11 @@ func claimIndexRewards() = {
   } else {
     claimResult(i.caller)
   }
+}
+
+@Callable(i)
+func evaluateClaim(user: String) = {
+  ([], claimResult(user.addressFromStringValue())._2)
 }
 
 
