@@ -1,0 +1,184 @@
+{-# STDLIB_VERSION 5 #-}
+{-# CONTENT_TYPE DAPP #-}
+{-# SCRIPT_TYPE ACCOUNT #-}
+
+let usdnIdStr = "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p"
+let usdnId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
+
+func tryGetString(key: String) = {
+  match getString(this, key) {
+    case b:String => b
+    case _ => ""
+  }
+}
+
+func getAssetString(assetId: ByteVector|Unit) = {
+  match assetId {
+    case b:ByteVector => b.toBase58String()
+    case _ => "WAVES"
+  }
+}
+
+func getAssetBytes(assetIdStr: String) = {
+  if (assetIdStr == "WAVES") then {unit} else {assetIdStr.fromBase58String()}
+}
+
+func getBalance(assetId: ByteVector|Unit) = {
+  match assetId {
+    case x: Unit => wavesBalance(this).available
+    case _ => assetBalance(this, assetId.value())
+  }
+}
+
+@Callable(i)
+func swap(routesStr: String, minToReceive: Int) = {
+  let balance0 = getBalance(i.payments[0].assetId) - i.payments[0].amount
+
+  func doSwap(amount0: Int, swap: String) = {
+    let swapLi = swap.split(",")
+    let (dApp, dAppType, t0Str, t1Str) = (swapLi[0], swapLi[1], swapLi[2], swapLi[3])
+
+    let t0 = getAssetBytes(t0Str)
+    let t1 = getAssetBytes(t1Str)
+
+    strict balanceBefore = getBalance(t1)
+    strict i1 = if (dAppType == "swopfi") then {
+      invoke(Address(dApp.fromBase58String()),"exchange",[1],[AttachedPayment(t0, amount0)]) 
+    } else {
+      invoke(Address(dApp.fromBase58String()),"swap",[t1Str, 0],[AttachedPayment(t0, amount0)]) 
+    }
+    strict balanceAfter = getBalance(t1)
+
+    balanceAfter - balanceBefore
+  }
+
+  func doRoute(accum: Int, route: String) = {
+    let amountIn = route.split("/")[0].parseIntValue()
+    let swaps = route.split("/")[1].split(";")
+    strict swapsResult = FOLD<3>(swaps, amountIn, doSwap)
+    accum + swapsResult
+  }
+
+  let routes = routesStr.split("|")
+  let amountIn = routes[0].split("/")[0].parseIntValue()
+  let asset0Id = routes[0].split("/")[1].split(";")[0].split(",")[2].getAssetBytes()
+
+  strict totalOut = FOLD<5>(routes, 0, doRoute)
+  let feeAmount = fraction(totalOut, 29, 10000)
+  let cleanTotalAmount = totalOut - feeAmount
+
+  let asset1Str = routesStr.split(",")[routesStr.split(",").size() - 1]
+  let asset1 = asset1Str.getAssetBytes()
+
+  strict usdnFee = if (asset1 == usdnId) then {
+    feeAmount
+  } else {
+    strict usdnBalanceBefore = getBalance(usdnId)
+    let poolAddressStr = tryGetString("static_asset_"+asset1Str+"_puzzlePool")
+    if (poolAddressStr == "") then {0} else {
+      strict convertedFee = invoke(addressFromStringValue(poolAddressStr),"swap",[usdnIdStr,0],[AttachedPayment(asset1, feeAmount)])
+      strict usdnBalanceAfter = getBalance(usdnId)
+
+      usdnBalanceAfter - usdnBalanceBefore
+    }
+  }
+
+  strict topUp = invoke(Address(base58'3PKUxbZaSYfsR7wu2HaAgiirHYwAMupDrYW'),"topUpReward",[],[AttachedPayment(usdnId,usdnFee)])
+  strict balance1 = getBalance(i.payments[0].assetId)
+
+  if (cleanTotalAmount < minToReceive) then {throw("amount to receive is lower than expected one " + cleanTotalAmount.toString())}
+  else if (asset0Id != i.payments[0].assetId || amountIn > i.payments[0].amount) then {throw("wrong asset attached as payment")}
+  else {
+    [
+      ScriptTransfer(i.caller, cleanTotalAmount, asset1)
+      # ScriptTransfer(i.caller, balance1 - balance0, asset0Id)
+    ]
+  }
+}
+
+
+@Callable(i)
+func swapWithReferral(routesStr: String, minToReceive: Int, refKey: String) = {
+  let balance0 = getBalance(i.payments[0].assetId) - i.payments[0].amount
+
+  func doSwap(amount0: Int, swap: String) = {
+    let swapLi = swap.split(",")
+    let (dApp, dAppType, t0Str, t1Str) = (swapLi[0], swapLi[1], swapLi[2], swapLi[3])
+
+    let t0 = getAssetBytes(t0Str)
+    let t1 = getAssetBytes(t1Str)
+
+    strict balanceBefore = getBalance(t1)
+    strict i1 = if (dAppType == "swopfi") then {
+      invoke(Address(dApp.fromBase58String()),"exchange",[1],[AttachedPayment(t0, amount0)]) 
+    } else {
+      invoke(Address(dApp.fromBase58String()),"swap",[t1Str, 0],[AttachedPayment(t0, amount0)]) 
+    }
+    strict balanceAfter = getBalance(t1)
+
+    balanceAfter - balanceBefore
+  }
+
+  func doRoute(accum: Int, route: String) = {
+    let amountIn = route.split("/")[0].parseIntValue()
+    let swaps = route.split("/")[1].split(";")
+    strict swapsResult = FOLD<3>(swaps, amountIn, doSwap)
+    accum + swapsResult
+  }
+
+  let routes = routesStr.split("|")
+  let amountIn = routes[0].split("/")[0].parseIntValue()
+  let asset0Id = routes[0].split("/")[1].split(";")[0].split(",")[2].getAssetBytes()
+
+  strict totalOut = FOLD<5>(routes, 0, doRoute)
+  let feeAmount = fraction(totalOut, 29, 10000)
+  let cleanTotalAmount = totalOut - feeAmount
+
+  let asset1Str = routesStr.split(",")[routesStr.split(",").size() - 1]
+  let asset1 = asset1Str.getAssetBytes()
+
+  strict usdnFee = if (asset1 == usdnId) then {
+    feeAmount
+  } else {
+    strict usdnBalanceBefore = getBalance(usdnId)
+    strict convertedFee = invoke(Address(tryGetString("static_asset_"+asset1Str+"_puzzlePool").fromBase58String()),"swap",[usdnIdStr,0],[AttachedPayment(asset1, feeAmount)])
+    strict usdnBalanceAfter = getBalance(usdnId)
+
+    usdnBalanceAfter - usdnBalanceBefore
+  }
+
+  let referralAddress = 
+  if (refKey == "muna") then {Address(base58'3PGFHzVGT4NTigwCKP1NcwoXkodVZwvBuuU')}
+  else if (refKey == "keeper") then {Address(base58'3PNgw6Db2TGUQbjnV7ekve6q126xBC1e7eM')} 
+  else if (refKey == "tci") then {Address(base58'3PNgw6Db2TGUQbjnV7ekve6q126xBC1e7eM')} 
+  else {Address(base58'3PQxXXiQXpWsjDwQLYxyuoPiaLnVHjJguFo')}
+  let refUsdnShare = fraction(usdnFee, 2, 10)
+
+  strict topUp = invoke(Address(base58'3PKUxbZaSYfsR7wu2HaAgiirHYwAMupDrYW'),"topUpReward",[],[AttachedPayment(usdnId,usdnFee - refUsdnShare)])
+
+  if (cleanTotalAmount < minToReceive) then {throw("amount to receive is lower than expected one " + cleanTotalAmount.toString())}
+  else if (asset0Id != i.payments[0].assetId || amountIn > i.payments[0].amount) then {throw("wrong asset attached as payment")}
+  else {
+    [
+      ScriptTransfer(i.caller, cleanTotalAmount, asset1),
+      ScriptTransfer(referralAddress, refUsdnShare, usdnId)
+      # ScriptTransfer(i.caller, getBalance(i.payments[0].assetId) - balance0, asset0Id)
+    ]
+  }
+}
+
+@Callable(i)
+func addTokenPuzzlePool(assetIdStr: String, poolAddressStr: String) = {
+  if (i.caller != Address(base58'3P8qVX189qpoTJZQQQdKS9endHK5sxWsvrd')) then {throw("admin only")}
+  else {
+    [
+      StringEntry("static_asset_"+assetIdStr+"_puzzlePool", poolAddressStr)
+    ]
+  }
+}
+
+
+
+@Verifier(tx)
+func verify() = sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey)
+
