@@ -4,8 +4,11 @@
 
 let usdnAssetId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
 let puzzleAssetId = base58'HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS'
+let usdtAssetId = base58'34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ'
+
 let usdnAssetIdStr = "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p"
 let puzzleAssetIdStr = "HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS"
+let usdtAssetIdStr = "34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ"
 
 let parentPoolAddress = Address(base58'3PFDgzu1UtswAkCMxqqQjbTeHaX4cMab8Kh')
 let masterAddress = Address(base58'3PLjwHcz9NEuaTo63NZR9B9okQiKQxZSbmf')
@@ -99,10 +102,11 @@ func getMinPIssued(payments: List[AttachedPayment]) = {
 
 func calculateUsdnValue(assetId: ByteVector|Unit, amount: Int, aBalance: Int, givenUsdnBalance: Int|Unit) = {
   let usdnInPool = assetIds.indexOf(usdnAssetId)
+  let usdtInPool = assetIds.indexOf(usdtAssetId)
   let assetWeight = AssetsWeights[assetIds.indexOf(assetId).value()]
 
-  if (usdnInPool == unit) then {
-    # no USDN in pool - use PUZZLE to calculate
+  if (usdnInPool == unit && usdtInPool == unit) then {
+    # no USDN/USDT in pool - use PUZZLE to calculate
     let puzzleWeight = AssetsWeights[assetIds.indexOf(puzzleAssetId).value()]
 
     let puzzleBalance = tryGetInteger("global_"+puzzleAssetIdStr+"_balance")
@@ -110,6 +114,12 @@ func calculateUsdnValue(assetId: ByteVector|Unit, amount: Int, aBalance: Int, gi
     let amountInPuzzle = fraction( amount, puzzleBalance / puzzleWeight, aBalance / assetWeight )
     let puzzlePrice = getIntegerValue(parentPoolAddress, "global_lastPuzzlePrice")
     fraction(amountInPuzzle*puzzlePrice, 1, Scale8)
+  } else if (usdtInPool != unit) then {
+    # USDT in pool
+    let usdtWeight = AssetsWeights[usdtInPool.value()]
+    let usdtBalance = tryGetInteger("global_"+usdtAssetIdStr+"_balance")
+
+    fraction( amount, usdtBalance / usdtWeight, aBalance / assetWeight )
   } else {
     # USDN in pool
     let usdnWeight = AssetsWeights[assetIds.indexOf(usdnAssetId).value()]
@@ -270,8 +280,8 @@ func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: Strin
   else if (poolDomain.size() > 13) then {throw("too large pool domain")}
   else if (fee > 500 || fee < 50) then {throw("fee value must be between 50 and 500 (0.5-5%)")}
   # TODO: check correctness of poolOwner, uniqueness of poolDomain, existance of USDN or PUZZLE in assetIdsStr
-  else if (assetIdsStr.indexOf(puzzleAssetIdStr) == unit && assetIdsStr.indexOf(usdnAssetIdStr) == unit) then {
-    throw("pool must have USDN or PUZZLE in the composition")
+  else if (assetIdsStr.indexOf(puzzleAssetIdStr) == unit && assetIdsStr.indexOf(usdnAssetIdStr) == unit && assetIdsStr.indexOf(usdtAssetIdStr) == unit) then {
+    throw("pool must have USDT, USDN or PUZZLE in the composition")
   }
   else {
     let assetIdsStrLi = assetIdsStr.split(",")
@@ -280,7 +290,10 @@ func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: Strin
     let assetWeightsStrLi = assetWeightsStr.split(",")
     let assetWeightsSum = FOLD<10>(assetWeightsStrLi, 0, sum)
 
-    let feeAssetStr = if (assetIdsStr.indexOf(usdnAssetIdStr) == unit) then {puzzleAssetIdStr} else {usdnAssetIdStr}
+    let feeAssetStr = if (assetIdsStr.indexOf(usdnAssetIdStr) == unit) then {
+      if (assetIdsStr.indexOf(puzzleAssetIdStr) == unit) then {usdtAssetIdStr} 
+      else {puzzleAssetIdStr}
+    } else {usdnAssetIdStr}
 
     func addTokenDataEntries(accum: List[IntegerEntry], assetNum: Int) = {
       if (assetNum >= assetIdsLi.size()) then {
@@ -526,7 +539,9 @@ func swap(assetOut: String, minimum: Int) = {
 
         # update volume stats
         IntegerEntry("global_volume", tryGetInteger("global_volume") + calculateUsdnValue(AssetIn, AmountIn, AssetInBalance, feeAssetOutBalance))
-      ] ++ if (stakingTopUp == unit) then {[Burn(feeAssetOut, protocolFee)]} else {[]}, 
+      ] ++ if (stakingTopUp == unit) then {[
+        ScriptTransfer(Address(base58'3P4kBiU4wr2yV1S5gMfu3MdkVvy7kxXHsKe'), protocolFee, feeAssetOut)
+      ]} else {[]}, 
       AmountOut
     )
   }
@@ -541,4 +556,3 @@ func verify() = {
     sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey) || sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey)
   }
 }
-
