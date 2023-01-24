@@ -1,0 +1,114 @@
+{-# STDLIB_VERSION 6 #-}
+{-# SCRIPT_TYPE ACCOUNT #-}
+{-# CONTENT_TYPE DAPP #-}
+let usdnId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
+
+let usdnIdStr = "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p"
+
+let puzzleId = base58'HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS'
+
+let Scale = 1000000000000
+
+func tryGetInteger (key: String) = match getInteger(this, key) {
+    case b: Int => 
+        b
+    case _ => 
+        0
+}
+
+
+func tryGetString (key: String) = match getString(this, key) {
+    case a: String => 
+        a
+    case _ => 
+        ""
+}
+
+
+func claimAliasResult (address: Address,assetIdStr: String) = {
+    let addressStr = toString(address)
+    let currentInterest = tryGetInteger((("global_lastCheck_" + assetIdStr) + "_interest"))
+    let lastCheckInterest = tryGetInteger((((addressStr + "_lastCheck_") + assetIdStr) + "_interest"))
+    let stakedAmount = if ((assetIdStr == usdnIdStr))
+        then tryGetInteger((addressStr + "_staked"))
+        else tryGetInteger((((addressStr + "_") + assetIdStr) + "_staked"))
+    let reward = if ((lastCheckInterest > 0))
+        then fraction((currentInterest - lastCheckInterest), stakedAmount, Scale)
+        else 0
+[IntegerEntry((((addressStr + "_lastCheck_") + assetIdStr) + "_interest"), currentInterest), IntegerEntry((((addressStr + "_") + assetIdStr) + "_claimed"), (tryGetInteger((((addressStr + "_") + assetIdStr) + "_claimed")) + reward)), ScriptTransfer(address, reward, usdnId)]
+    }
+
+
+func claimResult (address: Address) = claimAliasResult(address, usdnIdStr)
+
+
+func checkNFTValidity (assetId: ByteVector) = match getString(Address(base58'3P7FFQkgALLZDJpCf3smY517wjgPMswGoRP'), (("art_" + toBase58String(assetId)) + "_type")) {
+    case x: String => 
+        5
+    case _ => 
+        if ((getString(Address(base58'3PFQjjDMiZKQZdu5JqTHD7HwgSXyp9Rw9By'), (("nft_" + toBase58String(assetId)) + "_issuer")) == "3PMki5sHBsQb4KgDknbUwsL3YgxaCzaZnCJ"))
+            then 1
+            else 0
+}
+
+
+@Callable(i)
+func stake () = {
+    let addressStr = toString(i.caller)
+    let nftId = if ((i.payments[0].amount == 1))
+        then value(i.payments[0].assetId)
+        else throw("please attach NFT")
+    let assetIdStr = toBase58String(usdnId)
+    let currentInterest = tryGetInteger((("global_lastCheck_" + assetIdStr) + "_interest"))
+    let totalStakedAmount = tryGetInteger("global_staked")
+    let assetPower = fraction(10000, checkNFTValidity(nftId), 5)
+    let NFTName = if ((assetPower == 10000))
+        then "Eagle NFT"
+        else "Ania NFT"
+    if ((assetPower == 0))
+        then throw("not valid NFT attached")
+        else (claimResult(i.caller) ++ [IntegerEntry("global_staked", (totalStakedAmount + assetPower)), IntegerEntry((addressStr + "_staked"), (tryGetInteger((addressStr + "_staked")) + assetPower)), StringEntry((toBase58String(nftId) + "_owner"), addressStr), IntegerEntry(((("address_" + toString(i.caller)) + "_nft_") + toBase58String(nftId)), lastBlock.timestamp), StringEntry((toBase58String(nftId) + "_name"), NFTName)])
+    }
+
+
+
+@Callable(i)
+func unStake (nftIdStr: String) = {
+    let assetPower = fraction(10000, checkNFTValidity(fromBase58String(nftIdStr)), 5)
+    let addressStr = toString(i.caller)
+    let stakedAmount = tryGetInteger((addressStr + "_staked"))
+    let nftOwner = tryGetString((nftIdStr + "_owner"))
+    if ((addressStr != nftOwner))
+        then throw("you don't have NFT available")
+        else (claimResult(i.caller) ++ [IntegerEntry((addressStr + "_staked"), (stakedAmount - assetPower)), IntegerEntry("global_staked", (tryGetInteger("global_staked") - assetPower)), ScriptTransfer(i.caller, 1, fromBase58String(nftIdStr)), DeleteEntry((nftIdStr + "_owner")), DeleteEntry(((("address_" + toString(i.caller)) + "_nft_") + nftIdStr))])
+    }
+
+
+
+@Callable(i)
+func claimReward () = claimResult(i.caller)
+
+
+
+@Callable(i)
+func topUpReward () = {
+    let amount = i.payments[0].amount
+    let assetIdStr = usdnIdStr
+    let currentInterest = tryGetInteger((("global_lastCheck_" + assetIdStr) + "_interest"))
+    let totalStakedAmount = tryGetInteger("global_staked")
+    let interestDelta = if ((totalStakedAmount > 0))
+        then fraction(amount, Scale, totalStakedAmount)
+        else 0
+    let currentUltraInterest = tryGetInteger("global_lastCheck_ultra_interest")
+    let totalUltraStakedAmount = tryGetInteger("global_ultra_staked")
+    let ultraInterestDelta = if ((totalStakedAmount > 0))
+        then fraction(amount, Scale, totalStakedAmount)
+        else 0
+    if ((i.payments[0].assetId != usdnId))
+        then throw("wrong asset attached")
+        else [IntegerEntry((("global_" + assetIdStr) + "_earnings"), (tryGetInteger((("global_" + assetIdStr) + "_earnings")) + amount)), IntegerEntry((("global_lastCheck_" + assetIdStr) + "_interest"), (currentInterest + interestDelta))]
+    }
+
+
+@Verifier(tx)
+func verify () = sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey)
