@@ -276,7 +276,10 @@ func sum(accum: Int, n: String) = {accum + n.parseIntValue()}
 @Callable(i)
 func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: String, poolDomain: String, poolOwner: String, fee: Int) = {
   let poolOwnerAddress = Address(poolOwner.fromBase58String())
-  if (this != i.caller) then {throw("admin only")}
+  if (isShutdown()) then {
+    throw("contract is on stop")
+  } 
+  else if (this != i.caller) then {throw("admin only")}
   else if (poolDomain.size() > 13) then {throw("too large pool domain")}
   else if (fee > 500 || fee < 50) then {throw("fee value must be between 50 and 500 (0.5-5%)")}
   # TODO: check correctness of poolOwner, uniqueness of poolDomain, existance of USDN or PUZZLE in assetIdsStr
@@ -328,7 +331,9 @@ func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: Strin
 
 @Callable(i)
 func deInit() = {
-  if (i.caller != this) then {
+  if (isShutdown()) then {
+    throw("contract is on stop")
+  } else if (i.caller != this) then {
     throw("admin only")
   } else {
     [IntegerEntry("global_wasInited", 0)]
@@ -358,7 +363,9 @@ func init() = {
     FOLD<10>(payments, PoolTokenScale, handler)
   }
 
-  if (tryGetInteger("global_wasInited") > 0) then {  # PROD: > 0
+  if (isShutdown()) then {
+    throw("contract is on stop")
+  } else if (tryGetInteger("global_wasInited") > 0) then {  # PROD: > 0
     throw("pool already inited")
   } else {
     let initialPoolTokens = calculatePoolTokensAmount(i.payments)
@@ -385,7 +392,9 @@ func init() = {
 @Callable(i)
 func generateIndex(needChange: Boolean) = {
   # throw("LP is closed yet")
-  if (i.payments.size() != T) then {
+  if (isShutdown()) then {
+    throw("contract is on stop")
+  } else if (i.payments.size() != T) then {
     throw("you need to attach all pool tokens. amount of pool tokens: " + T.toString())
   } else {
     if (!(checkTokensValidity(i.payments))) then {throw("wrong assets attached")} 
@@ -409,7 +418,9 @@ func stakeIndex() = {
   let addressStr = i.originCaller.toString()
   let pmt = i.payments[0]
 
-  if (pmt.assetId.value() != tryGetBinary("global_poolToken_id")) then {throw("wrong asset attached")} else {
+  if (isShutdown()) then {
+    throw("contract is on stop")
+  } else if (pmt.assetId.value() != tryGetBinary("global_poolToken_id")) then {throw("wrong asset attached")} else {
     indexStakeResult(addressStr, pmt.amount)
   }
 }
@@ -419,7 +430,9 @@ func unstakeIndex(puzzleAmount: Int) = {
   let addressStr = i.originCaller.toString()
 
   let puzzleAvailable = tryGetInteger(addressStr + "_indexStaked")
-  if (puzzleAmount > puzzleAvailable) then {throw("you don't have index tokens available")} 
+  if (isShutdown()) then {
+    throw("contract is on stop")
+  } else if (puzzleAmount > puzzleAvailable) then {throw("you don't have index tokens available")} 
   else if (isShutdown()) then {
     throw("contract is on stop")
   } 
