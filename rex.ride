@@ -1,0 +1,124 @@
+{-# STDLIB_VERSION 5 #-}
+{-# CONTENT_TYPE DAPP #-}
+{-# SCRIPT_TYPE ACCOUNT #-}
+
+let aggregatorAddress = Address(base58'3PGFHzVGT4NTigwCKP1NcwoXkodVZwvBuuU')
+let whitelist = [Address(base58'3PBTPFGaKL7qEdj9Tz1QUqbvJUcPNu934j4')]
+
+# ---- Service ---- #
+
+func tryGetInteger(key: String) = {
+  match getInteger(this, key) {
+    case b:Int => b
+    case _ => 0
+  }
+}
+
+func tryGetString(key: String) = {
+  match getString(this, key) {
+    case b:String => b
+    case _ => ""
+  }
+}
+
+func getAssetString(assetId: ByteVector|Unit) = {
+  match assetId {
+    case b:ByteVector => b.toBase58String()
+    case _ => "WAVES"
+  }
+}
+
+func getAssetBytes(assetIdStr: String) = {
+  if (assetIdStr == "WAVES") then {unit} else {assetIdStr.fromBase58String()}
+}
+
+func getBalance(assetId: ByteVector|Unit) = {
+  match assetId {
+    case x: Unit => wavesBalance(this).available
+    case _ => assetBalance(this, assetId.value())
+  }
+}
+
+# ---- Callables ---- #
+
+@Callable(i)
+func exchangeThenTransfer(asset1IdStr: String, recipient: String, minToReceive: Int) = {
+  let request = i.transactionId.toBase58String()
+  [
+    StringEntry(request+"_sendTo", recipient),
+    StringEntry(request+"_status", "open"),
+    IntegerEntry(request+"_minToReceive", minToReceive),
+
+    StringEntry("awaits_"+request, i.payments[0].assetId.getAssetString()+","+i.payments[0].amount.toString()+","+asset1IdStr)
+  ]
+}
+
+@Callable(i)
+func exchangeThenInvoke(asset1IdStr: String, dApp: String, function: String, args: List[String], minToReceive: Int) = {
+  let request = i.transactionId.toBase58String()
+  [
+    StringEntry(request+"_dApp", dApp),
+    StringEntry(request+"_function", function),
+    StringEntry(request+"_args", args.makeString("|||")),
+    StringEntry(request+"_status", "open"),
+    IntegerEntry(request+"_minToReceive", minToReceive),
+
+    StringEntry("awaits_"+request, i.payments[0].assetId.getAssetString()+","+i.payments[0].amount.toString()+","+asset1IdStr)
+  ]
+}
+
+@Callable(i)
+func cancelExchange(request: String) = {
+  let canCancel = tryGetString(request+"_sendTo") == i.caller.toString()
+
+  if (canCancel) then {
+    [
+      DeleteEntry(request+"_sendTo"),
+      DeleteEntry(request+"_status"),
+      DeleteEntry("awaits_"+request),
+      DeleteEntry(request+"_dApp"),
+      DeleteEntry(request+"_function"),
+      DeleteEntry(request+"_args")
+    ]
+  } else {throw("only request owner can use this method")}
+}
+
+@Callable(i)
+func puzzleSwap(request: String, routeStr: String) = {
+  if (whitelist.indexOf(i.caller) == unit) then {throw("whitelist only")} 
+  else if (tryGetString(request+"_status") != "open") then {throw("operation is not possible")} else {
+    # do swap
+    let swapData = tryGetString("awaits_"+request).split(",")
+    strict balanceBefore = getBalance(swapData[2].getAssetBytes())
+    strict inv = invoke(aggregatorAddress, "swap", [routeStr, 0], [AttachedPayment(swapData[0].getAssetBytes(), swapData[1].parseIntValue())])
+    strict amount1 = getBalance(swapData[2].getAssetBytes()) - balanceBefore
+
+    if (amount1 < tryGetInteger(request+"_minToReceive")) then {
+      throw("amount to receive is too small")
+    } else {
+      let sendAction = if (tryGetString(request+"_sendTo").addressFromString() != unit) then {
+        [
+          DeleteEntry(request+"_sendTo"),
+          ScriptTransfer(tryGetString(request+"_sendTo").addressFromStringValue(), amount1, swapData[2].getAssetBytes())
+        ]
+      } else {
+        strict inv2 = invoke(tryGetString(request+"_dApp").addressFromStringValue(), tryGetString(request+"_function"), 
+                            tryGetString(request+"_args").split("|||"), [AttachedPayment(swapData[2].getAssetBytes(), amount1)])
+        [
+          DeleteEntry(request+"_dApp"),
+          DeleteEntry(request+"_function"),
+          DeleteEntry(request+"_args")
+        ]
+      }
+
+      [
+        DeleteEntry(request+"_status"),
+        DeleteEntry("awaits_"+request)
+      ] ++ sendAction
+    }
+  }
+}
+
+@Verifier(tx)
+func verify() = sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey)
+        
