@@ -104,7 +104,7 @@ func swapInternal(i: Invocation, routesStr: String, minToReceive: Int, refKey: S
   let feeAmount = fraction(totalOut, 29, 10000)
   let cleanTotalAmount = totalOut - feeAmount
 
-  if (cleanTotalAmount < minToReceive) then {throw("amount to receive is lower than expected one " + cleanTotalAmount.toString())} else
+  if (cleanTotalAmount < minToReceive) then {throw("amount to receive is too low. please try again with another amount or wait 1 minute. expected: " + minToReceive.toString() + ", real " + cleanTotalAmount.toString())} else
 
   strict usdnFee = if (asset1 == usdnId) then {
     feeAmount
@@ -161,7 +161,7 @@ func swapWithReferral(routesStr: String, minToReceive: Int, refKey: String) = {
 
 @Callable(i)
 func addTokenPuzzlePool(assetIdStr: String, poolAddressStr: String) = {
-  if (i.caller != Address(base58'3P8qVX189qpoTJZQQQdKS9endHK5sxWsvrd')) then {throw("admin only")}
+  if (i.caller != Address(base58'3PLjwHcz9NEuaTo63NZR9B9okQiKQxZSbmf')) then {throw("admin only")}
   else {
     [
       StringEntry("static_asset_"+assetIdStr+"_puzzlePool", poolAddressStr)
