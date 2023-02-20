@@ -3,10 +3,9 @@
 {-# CONTENT_TYPE DAPP #-}
 
 let usdnId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
-
 let usdnIdStr = "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p"
-
 let puzzleId = base58'HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS'
+let puzzleIdStr = "HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS"
 
 let Scale = 1000000000000
 
@@ -36,11 +35,16 @@ func claimAliasResult (address: Address, assetIdStr: String) = {
     let reward = if ((lastCheckInterest > 0))
         then fraction((currentInterest - lastCheckInterest), stakedAmount, Scale)
         else 0
-[IntegerEntry((((addressStr + "_lastCheck_") + assetIdStr) + "_interest"), currentInterest), IntegerEntry((((addressStr + "_") + assetIdStr) + "_claimed"), (tryGetInteger((((addressStr + "_") + assetIdStr) + "_claimed")) + reward)), IntegerEntry((((addressStr + "_") + assetIdStr) + "_lastClaim"), lastBlock.timestamp), ScriptTransfer(address, reward, usdnId)]
-    }
+    [
+        IntegerEntry((((addressStr + "_lastCheck_") + assetIdStr) + "_interest"), currentInterest), 
+        IntegerEntry((((addressStr + "_") + assetIdStr) + "_claimed"), (tryGetInteger((((addressStr + "_") + assetIdStr) + "_claimed")) + reward)), 
+        IntegerEntry((((addressStr + "_") + assetIdStr) + "_lastClaim"), lastBlock.timestamp), 
+        ScriptTransfer(address, reward, assetIdStr.fromBase58String())
+    ]
+}
 
 
-func claimResult (address: Address) = (claimAliasResult(address, usdnIdStr) ++ claimAliasResult(address, "ultra"))
+func claimResult (address: Address) = (claimAliasResult(address, usdnIdStr) ++ claimAliasResult(address, puzzleIdStr))
 
 
 func checkNFTValidity (assetIdStr: String) = false
@@ -115,7 +119,7 @@ func claimReward () = claimResult(i.caller)
 func topUpReward () = {
     let amount = fraction(i.payments[0].amount, 9, 10)
     let ultraAmount = (i.payments[0].amount - amount)
-    let assetIdStr = toBase58String(usdnId)
+    let assetIdStr = toBase58String(i.payments[0].assetId.value())
     let currentInterest = tryGetInteger((("global_lastCheck_" + assetIdStr) + "_interest"))
     let totalStakedAmount = tryGetInteger("global_staked")
     let interestDelta = if ((totalStakedAmount > 0))
@@ -126,7 +130,7 @@ func topUpReward () = {
     let ultraInterestDelta = if ((totalStakedAmount > 0))
         then fraction(amount, Scale, totalStakedAmount)
         else 0
-    if ((i.payments[0].assetId != usdnId))
+    if ((i.payments[0].assetId != usdnId) && (i.payments[0].assetId != puzzleId))
         then throw("wrong asset attached")
         else (
           [IntegerEntry((("global_" + assetIdStr) + "_earnings"), (tryGetInteger((("global_" + assetIdStr) + "_earnings")) + amount)), IntegerEntry((("global_lastCheck_" + assetIdStr) + "_interest"), (currentInterest + interestDelta)), IntegerEntry("global_ultra_earnings", (tryGetInteger("global_ultra_earnings") + ultraAmount)), IntegerEntry("global_lastCheck_ultra_interest", (currentUltraInterest + ultraInterestDelta))], amount)
