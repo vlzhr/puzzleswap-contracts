@@ -283,8 +283,8 @@ func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: Strin
   else if (poolDomain.size() > 13) then {throw("too large pool domain")}
   else if (fee > 500 || fee < 50) then {throw("fee value must be between 50 and 500 (0.5-5%)")}
   # TODO: check correctness of poolOwner, uniqueness of poolDomain, existance of USDN or PUZZLE in assetIdsStr
-  else if (assetIdsStr.indexOf(puzzleAssetIdStr) == unit && assetIdsStr.indexOf(usdnAssetIdStr) == unit && assetIdsStr.indexOf(usdtAssetIdStr) == unit) then {
-    throw("pool must have USDT, USDN or PUZZLE in the composition")
+  else if (assetIdsStr.indexOf(puzzleAssetIdStr) == unit && assetIdsStr.indexOf(usdnAssetIdStr) == unit && assetIdsStr.indexOf(usdtAssetIdStr) == unit && assetIdsStr.indexOf("WAVES") == unit) then {
+    throw("pool must have USDT, USDN, WAVES or PUZZLE in the composition")
   }
   else {
     let assetIdsStrLi = assetIdsStr.split(",")
@@ -293,10 +293,10 @@ func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: Strin
     let assetWeightsStrLi = assetWeightsStr.split(",")
     let assetWeightsSum = FOLD<10>(assetWeightsStrLi, 0, sum)
 
-    let feeAssetStr = if (assetIdsStr.indexOf(usdnAssetIdStr) == unit) then {
-      if (assetIdsStr.indexOf(puzzleAssetIdStr) == unit) then {usdtAssetIdStr} 
-      else {puzzleAssetIdStr}
-    } else {usdnAssetIdStr}
+    let feeAssetStr = if (assetIdsStr.indexOf(usdnAssetIdStr) != unit) then (usdnAssetIdStr)
+                      else if (assetIdsStr.indexOf("WAVES") != unit) then {"WAVES"}
+                      else if (assetIdsStr.indexOf(puzzleAssetIdStr) != unit) then {usdtAssetIdStr} 
+                      else {puzzleAssetIdStr}
 
     func addTokenDataEntries(accum: List[IntegerEntry], assetNum: Int) = {
       if (assetNum >= assetIdsLi.size()) then {
@@ -522,7 +522,7 @@ func swap(assetOut: String, minimum: Int) = {
     # top up protocol fee
     let creatorFee = fraction(feeAmountOut, 1, 10)
     let protocolFee = fraction(feeAmountOut, 4, 10)
-    strict stakingTopUp = if (feeAssetOut == usdnAssetId) then {
+    strict stakingTopUp = if (feeAssetOut == usdnAssetId || feeAssetOut == puzzleAssetId) then {
       reentrantInvoke(Address(base58'3PFTbywqxtFfukX3HyT881g4iW5K4QL3FAS'), "topUpReward", [], [AttachedPayment(feeAssetOut, protocolFee)])
     } else {unit}
   
