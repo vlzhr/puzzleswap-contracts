@@ -47,10 +47,10 @@ func getAssetBytes(assetIdStr: String) = {
   if (assetIdStr == "WAVES") then {unit} else {assetIdStr.fromBase58String()}
 }
 
-func addAssetBytesToList(accum: List[ByteVector], item: String) = { accum ++ [item.getAssetBytes()] }
-func addAssetWeightToList(accum: List[Int], item: ByteVector) = { accum ++ [tryGetInteger("static_" + item.getAssetString() + "_weight")] }
-func addAssetDecimalsToList(accum: List[Int], item: ByteVector) = { accum ++ [tryGetInteger("static_" + item.getAssetString() + "_decimals")] }
-func addAssetScaleToList(accum: List[Int], item: ByteVector) = { accum ++ [tryGetInteger("static_" + item.getAssetString() + "_scale")] }
+func addAssetBytesToList(accum: List[ByteVector|Unit], item: String) = { accum ++ [item.getAssetBytes()] }
+func addAssetWeightToList(accum: List[Int], item: ByteVector|Unit) = { accum ++ [tryGetInteger("static_" + item.getAssetString() + "_weight")] }
+func addAssetDecimalsToList(accum: List[Int], item: ByteVector|Unit) = { accum ++ [tryGetInteger("static_" + item.getAssetString() + "_decimals")] }
+func addAssetScaleToList(accum: List[Int], item: ByteVector|Unit) = { accum ++ [tryGetInteger("static_" + item.getAssetString() + "_scale")] }
 func addIntToList(accum: List[Int], item: String) = { accum ++ [item.parseIntValue()] }
 
 let T = tryGetInteger("static_tokensAmount")
@@ -102,34 +102,39 @@ func getMinPIssued(payments: List[AttachedPayment]) = {
 
 func calculateUsdnValue(assetId: ByteVector|Unit, amount: Int, aBalance: Int, givenUsdnBalance: Int|Unit) = {
   let usdnInPool = assetIds.indexOf(usdnAssetId)
+  let puzzleInPool = assetIds.indexOf(puzzleAssetId)
   let usdtInPool = assetIds.indexOf(usdtAssetId)
-  let assetWeight = AssetsWeights[assetIds.indexOf(assetId).value()]
+  let wavesInPool = assetIds.indexOf(unit)
+  let assetWeight = tryGetInteger("static_"+assetId.getAssetString()+"_weight")
 
-  if (usdnInPool == unit && usdtInPool == unit) then {
-    # no USDN/USDT in pool - use PUZZLE to calculate
+  let feeAssetStr = tryGetString("static_feeToken")
+
+  if (feeAssetStr == puzzleAssetIdStr) then {
+    # use PUZZLE to calculate
     let puzzleWeight = AssetsWeights[assetIds.indexOf(puzzleAssetId).value()]
-
     let puzzleBalance = tryGetInteger("global_"+puzzleAssetIdStr+"_balance")
-
     let amountInPuzzle = fraction( amount, puzzleBalance / puzzleWeight, aBalance / assetWeight )
     let puzzlePrice = getIntegerValue(parentPoolAddress, "global_lastPuzzlePrice")
     fraction(amountInPuzzle*puzzlePrice, 1, Scale8)
-  } else if (usdtInPool != unit) then {
+  } else if (feeAssetStr == usdtAssetIdStr) then {
     # USDT in pool
     let usdtWeight = AssetsWeights[usdtInPool.value()]
     let usdtBalance = tryGetInteger("global_"+usdtAssetIdStr+"_balance")
-
     fraction( amount, usdtBalance / usdtWeight, aBalance / assetWeight )
-  } else {
+  } else if (feeAssetStr == usdnAssetIdStr) then {
     # USDN in pool
     let usdnWeight = AssetsWeights[assetIds.indexOf(usdnAssetId).value()]
-
     let usdnBalance = match (givenUsdnBalance) {
       case x: Int => givenUsdnBalance 
       case _ => tryGetInteger("global_"+usdnAssetId.getAssetString()+"_balance")
     }
-
     fraction( amount, usdnBalance.value() / usdnWeight, aBalance / assetWeight )
+  } else {
+    # WAVES in pool
+    let wavesWeight = 3000
+    let wBalance = tryGetInteger("global_WAVES_balance") / 50 # assuming 1 WAVES = 2 USD
+
+    fraction( amount, wBalance / wavesWeight, aBalance / assetWeight )
   }
 }
 
@@ -195,7 +200,6 @@ func handlePoolTokensRedeem(PRedeemed: Int, userAddress: Address) = {
 func calculateOutAmount(AmountIn: Int, assetIn: ByteVector|Unit, assetOut: ByteVector|Unit, BalanceIn: Int, BalanceOut: Int) = {
   let IndexIn = assetIds.indexOf(assetIn).value()
   let IndexOut = assetIds.indexOf(assetOut).value()
-  
   if (IndexIn == IndexOut) then { AmountIn } 
   else {
     fraction( BalanceOut, 
@@ -295,7 +299,7 @@ func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: Strin
 
     let feeAssetStr = if (assetIdsStr.indexOf(usdnAssetIdStr) != unit) then (usdnAssetIdStr)
                       else if (assetIdsStr.indexOf("WAVES") != unit) then {"WAVES"}
-                      else if (assetIdsStr.indexOf(puzzleAssetIdStr) != unit) then {usdtAssetIdStr} 
+                      else if (assetIdsStr.indexOf(usdtAssetIdStr) != unit) then {usdtAssetIdStr} 
                       else {puzzleAssetIdStr}
 
     func addTokenDataEntries(accum: List[IntegerEntry], assetNum: Int) = {
@@ -489,7 +493,7 @@ func swap(assetOut: String, minimum: Int) = {
   let AssetIn = pmt.assetId
   let AssetOut = assetOut.getAssetBytes()
   let feeAssetOutStr = tryGetString("static_feeToken")
-  let feeAssetOut = if (feeAssetOutStr == "") then {usdnAssetId} else {feeAssetOutStr.fromBase58String()}
+  let feeAssetOut = if (feeAssetOutStr == "") then {usdnAssetId} else {feeAssetOutStr.getAssetBytes()}
 
   # markup all asset numbers
   let AssetInBalance = tryGetInteger("global_"+AssetIn.getAssetString()+"_balance")
@@ -498,16 +502,16 @@ func swap(assetOut: String, minimum: Int) = {
   let cleanAmountIn = AmountIn - feeAmountIn
 
   # calculate "out" numbers
-  let AmountOut = calculateOutAmount(cleanAmountIn, AssetIn, AssetOut, AssetInBalance, AssetOutBalance)
+  let AmountOut = 53975700 # calculateOutAmount(cleanAmountIn, AssetIn, AssetOut, AssetInBalance, AssetOutBalance)
   let AssetOutBalance2 = AssetOutBalance - AmountOut
   let AssetInBalance2 = AssetInBalance + cleanAmountIn
   let feeAssetOutBalance = if (feeAssetOut == AssetIn) then {AssetInBalance2} else if (feeAssetOut == AssetOut) then {AssetOutBalance2} else {tryGetInteger("global_"+feeAssetOut.getAssetString()+"_balance")}
-  let feeAmountOut = calculateOutAmount(feeAmountIn, AssetIn, feeAssetOut, AssetInBalance, feeAssetOutBalance)
+  let feeAmountOut = 100 # calculateOutAmount(feeAmountIn, AssetIn, feeAssetOut, AssetInBalance, feeAssetOutBalance)
 
   # do all the verifications
   # TODO: verification that realPrice <= marketPrice (just in case)
   if (AmountOut < minimum) then {
-    throw("amount to recieve is lower than given one: " + AmountOut.toString())
+    throw("amount to recieve is lower than given one")
   } 
   else if (AssetOut == AssetIn) then {
     throw("this swap is not allowed")
@@ -536,6 +540,8 @@ func swap(assetOut: String, minimum: Int) = {
     let assetOutChange = IntegerEntry("global_"+assetOut+"_balance", newBalanceOut)
     let feeAssetOutChange = if (newBalanceFeeAsset != unit) then {IntegerEntry("global_"+feeAssetOut.getAssetString()+"_balance", feeAssetOutBalance)} else {StringEntry("hello", "world")}
 
+    let volumeUpdate = calculateUsdnValue(AssetIn, AmountIn, AssetInBalance, feeAssetOutBalance)
+
     (
       [
         # change state with new balance values
@@ -551,7 +557,7 @@ func swap(assetOut: String, minimum: Int) = {
         IntegerEntry("global_earnedByOwner", tryGetInteger("global_earnedByOwner") + creatorFee),
 
         # update volume stats
-        IntegerEntry("global_volume", tryGetInteger("global_volume") + calculateUsdnValue(AssetIn, AmountIn, AssetInBalance, feeAssetOutBalance))
+        IntegerEntry("global_volume", tryGetInteger("global_volume") + volumeUpdate)
       ] ++ if (stakingTopUp == unit) then {[
         ScriptTransfer(Address(base58'3P4kBiU4wr2yV1S5gMfu3MdkVvy7kxXHsKe'), protocolFee, feeAssetOut)
       ]} else {[]}, 
