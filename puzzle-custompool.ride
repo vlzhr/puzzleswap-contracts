@@ -544,7 +544,9 @@ func swap(assetOut: String, minimum: Int) = {
     # prepare state changes
     let assetInChange = IntegerEntry("global_"+AssetIn.getAssetString()+"_balance", newBalanceIn)
     let assetOutChange = IntegerEntry("global_"+assetOut+"_balance", newBalanceOut)
-    let feeAssetOutChange = if (newBalanceFeeAsset != unit) then {IntegerEntry("global_"+feeAssetOut.getAssetString()+"_balance", feeAssetOutBalance)} else {StringEntry("hello", "world")}
+    let feeAssetOutChange = if (newBalanceFeeAsset != unit) 
+                            then {IntegerEntry("global_"+feeAssetOut.getAssetString()+"_balance", newBalanceFeeAsset.value())} 
+                            else {StringEntry("hello", "world")}
 
     let volumeUpdate = calculateUsdnValue(AssetIn, AmountIn, AssetInBalance, feeAssetOutBalance)
 
