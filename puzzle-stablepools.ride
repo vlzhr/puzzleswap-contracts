@@ -1,0 +1,132 @@
+{-# STDLIB_VERSION 6 #-}
+{-# CONTENT_TYPE DAPP #-}
+{-# SCRIPT_TYPE ACCOUNT #-}
+
+### SERVICE
+
+let Scale8 = 100000000
+
+func tryGetInteger(key: String) = {
+  match getInteger(this, key) {
+      case b:Int => b
+      case _ => 0
+  }
+}
+
+func tryGetBoolean(key: String) = {
+  match getBoolean(this, key) {
+      case b:Boolean => b
+      case _ => false
+  }
+}
+
+func tryGetString(key: String) = {
+  match getString(this, key) {
+      case b:String => b
+      case _ => ""
+  }
+}
+
+func tryGetBinary(key: String) = {
+  match getBinary(this, key) {
+      case b:ByteVector => b
+      case _ => base58''
+  }
+}
+
+func getAssetString(assetId: ByteVector|Unit) = {
+  match assetId {
+    case b:ByteVector => b.toBase58String()
+    case _ => "WAVES"
+  }
+}
+
+func getAssetBytes(assetIdStr: String) = {
+  if (assetIdStr == "WAVES") then {unit} else {assetIdStr.fromBase58String()}
+}
+
+func getBalance(assetIdStr: String) = {
+  if (assetIdStr == "WAVES") then {wavesBalance(this).available} else {assetBalance(this, assetIdStr.fromBase58String())}
+}
+
+
+### SETTINGS
+
+let assets = [base58'9wc3LXNA4TEBsXyKtoLE9mrbDD7WMHXvXrCjZvabLAsi', base58'HGgabTqUS8WtVFUJzfmrTDMgEccJuZLBPhFgQFxvnsoW']
+let assetDomains = ["USDT-ERC20", "USDC-ERC20"]
+let fee = 0  # out of Scale8
+
+
+### FUNCTIONS
+
+
+@Callable(i)
+func provideLiquidity() = {
+  let address = i.caller.toString()
+  let assetIn = i.payments[0].assetId
+  let assetInStr = assetIn.getAssetString()
+  let assetAmount = i.payments[0].amount
+  let assetInIndex = assets.indexOf(assetIn)
+
+  if assetInIndex == unit then {throw("non-valid asset attached")}
+  else if assetAmount <= 0 then {throw("attach more than 0 tokens")}
+  else {
+    let prevLiquidity = tryGetInteger(address+"_supplied")
+    [
+      IntegerEntry(address+"_supplied", prevLiquidity + assetAmount),
+      IntegerEntry("global_supplied", tryGetInteger("global_supplied") + assetAmount),
+      IntegerEntry(assetInStr+"_balance", tryGetInteger(assetInStr+"_balance") + assetAmount)
+    ]
+  }
+}
+
+
+@Callable(i)
+func withdrawLiquidity(assetOut: String, amount: Int) = {
+  let address = i.caller.toString()
+  let prevLiquidity = tryGetInteger(address+"_supplied")
+  let assetOutBytes = assetOut.getAssetBytes()
+  let assetOutIndex = assets.indexOf(assetOutBytes)
+
+  if assetOutIndex == unit then {throw("non-valid asset requested")}
+  else if amount <= 0 then {throw("operations above 0 tokens supported")}
+  else if amount > prevLiquidity then {throw("provided liquidity is smaller than amount to withdraw")}
+  else {
+    [
+      IntegerEntry(address+"_supplied", prevLiquidity - amount),
+      IntegerEntry("global_supplied", tryGetInteger("global_supplied") - amount),
+      IntegerEntry(assetOut+"_balance", tryGetInteger(assetOut+"_balance") - amount),
+      ScriptTransfer(address.addressFromStringValue(), amount, assetOutBytes)
+    ]
+  }
+}
+
+
+@Callable(i)
+func swap(assetOut: String, minToReceive: Int) = {
+  let assetIn = i.payments[0].assetId
+  let assetInStr = assetIn.getAssetString()
+  let assetInAmount = i.payments[0].amount
+  let assetInIndex = assets.indexOf(assetIn)
+  let assetOutBytes = assetOut.getAssetBytes()
+  let assetOutIndex = assets.indexOf(assetOutBytes)
+
+  let assetOutAmount = fraction(assetInAmount, Scale8-fee, Scale8)
+
+  if assetInIndex == unit then {throw("non-valid asset attached")}
+  else if assetOutIndex == unit then {throw("non-valid asset requested")}
+  else if assetInAmount <= 0 then {throw("attach more than 0 tokens")}
+  else if assetOutAmount > tryGetInteger(assetOut+"_balance") then {throw("contract out of reserves")}
+  else {
+    [
+      IntegerEntry(assetOut+"_balance", tryGetInteger(assetOut+"_balance") - assetOutAmount),
+      IntegerEntry(assetInStr+"_balance", tryGetInteger(assetInStr+"_balance") + assetInAmount),
+      ScriptTransfer(i.caller, assetOutAmount, assetOutBytes)
+    ]
+  }
+}
+
+
+@Verifier(tx)
+func verify() = sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey)
+        
