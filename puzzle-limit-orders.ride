@@ -1,0 +1,172 @@
+{-# STDLIB_VERSION 6 #-}
+{-# SCRIPT_TYPE ACCOUNT #-}
+{-# CONTENT_TYPE DAPP #-}
+
+let aggregator = "3PGFHzVGT4NTigwCKP1NcwoXkodVZwvBuuU"
+let proxyAddressStr = "3PMcMiMEs6w56NRGacksXtFG5zS7doE9fpL"
+
+func tryGetString (key: String) = match getString(this, key) {
+    case b: String => b
+    case _ => ""
+}
+
+func tryGetInteger (key: String) = match getInteger(this, key) {
+    case b: Int => b
+    case _ => 0
+}
+
+func getAssetString (assetId: ByteVector|Unit) = match assetId {
+    case b: ByteVector => toBase58String(b)
+    case _ => "WAVES"
+}
+
+func getAssetBytes (assetIdStr: String) = if ((assetIdStr == "WAVES"))
+    then unit
+    else fromBase58String(assetIdStr)
+
+func getDappBalance (assetId: ByteVector|Unit) = match assetId {
+    case b: ByteVector => assetBalance(this, b)
+    case _ => wavesBalance(this).available
+}
+
+
+@Callable(i)
+func createOrder (asset1: String, amount1: Int) = {
+    let newOrdersAmount = (tryGetInteger("global_ordersAmount") + 1)
+    let orderId = toString(newOrdersAmount)
+    if (size(i.payments) != 1) then throw("You have to provide payment")
+    else if (0 >= amount1) then throw("Amount1 cannot be less or equals 0")
+      else {
+        let asset0 = getAssetString(i.payments[0].assetId)
+        let amount0 = i.payments[0].amount
+        let userOrders = tryGetString((("user_" + toString(i.caller)) + "_orders"))
+        let newUserOrders =                 match userOrders {
+          case "" => orderId
+          case _ => userOrders + "," + orderId
+        }
+
+        [
+          IntegerEntry("global_ordersAmount", newOrdersAmount), 
+          StringEntry("order_" + orderId + "_token0", asset0), 
+          IntegerEntry("order_" + orderId + "_amount0", amount0), 
+          IntegerEntry("order_" + orderId + "_amount1", amount1), 
+          StringEntry("order_" + orderId + "_token1", asset1), 
+          IntegerEntry("order_" + orderId + "_fulfilled0", 0), 
+          IntegerEntry("order_" + orderId + "_fulfilled1", 0), 
+          StringEntry("order_" + orderId + "_owner", toString(i.caller)), 
+          StringEntry("order_" + orderId + "_status", "active"), 
+          IntegerEntry("order_" + orderId + "_timestamp", lastBlock.timestamp), 
+          StringEntry("order_" + orderId + "_txId", toBase58String(i.transactionId)), 
+          StringEntry("user_" + toString(i.caller) + "_orders", newUserOrders)
+        ]
+      }
+    }
+
+
+
+@Callable(i)
+func fulfillOrder (orderId: String) = {
+    let orderOwner = valueOrErrorMessage(getString((("order_" + orderId) + "_owner")), "Cannot find order owner")
+    let orderStatus = getString((("order_" + orderId) + "_status"))
+    let orderAsset0 = valueOrErrorMessage(getString((("order_" + orderId) + "_token0")), "Cannot find token0")
+    let orderAmount0 = valueOrErrorMessage(getInteger((("order_" + orderId) + "_amount0")), "Cannot find amount0")
+    let orderFulfilled0 = valueOrErrorMessage(getInteger((("order_" + orderId) + "_fulfilled0")), "Cannot find fulfilled0")
+    let orderAmount0Left = (orderAmount0 - orderFulfilled0)
+    let orderAsset1 = valueOrErrorMessage(getString((("order_" + orderId) + "_token1")), "Cannot find token1")
+    let orderAmount1 = valueOrErrorMessage(getInteger((("order_" + orderId) + "_amount1")), "Cannot find amount1")
+    let orderFulfilled1 = valueOrErrorMessage(getInteger((("order_" + orderId) + "_fulfilled1")), "Cannot find fulfilled1")
+    let orderAmount1Left = (orderAmount1 - orderFulfilled1)
+
+    if (orderStatus != "active") then throw("Order already closed or canceled")
+    else if ((size(i.payments) != 1)) then throw("You have to provide payment")
+    else {
+      let callerAddress = i.caller
+      let ownerAddress = addressFromStringValue(orderOwner)
+      let paymentAsset1 = getAssetString(i.payments[0].assetId)
+      let paymentAmount1 = i.payments[0].amount
+
+      if (paymentAsset1 != orderAsset1) then throw("Wrong payment asset")
+      else if ((paymentAmount1 >= orderAmount1Left))
+        then [
+          ScriptTransfer(callerAddress, (paymentAmount1 - orderAmount1Left), getAssetBytes(orderAsset1)), 
+          ScriptTransfer(callerAddress, orderAmount0Left, getAssetBytes(orderAsset0)), 
+          ScriptTransfer(ownerAddress, orderAmount1Left, getAssetBytes(paymentAsset1)), 
+          IntegerEntry((("order_" + orderId) + "_fulfilled0"), (orderFulfilled0 + orderAmount0Left)), 
+          IntegerEntry((("order_" + orderId) + "_fulfilled1"), (orderFulfilled1 + orderAmount1Left)), 
+          StringEntry((("order_" + orderId) + "_status"), "closed")
+        ]
+        else {
+          let amount0 = fraction(orderAmount0, paymentAmount1, orderAmount1, FLOOR)
+          
+          [
+            ScriptTransfer(ownerAddress, paymentAmount1, getAssetBytes(paymentAsset1)), 
+            ScriptTransfer(callerAddress, amount0, getAssetBytes(orderAsset0)), 
+            IntegerEntry((("order_" + orderId) + "_fulfilled0"), (orderFulfilled0 + amount0)), 
+            IntegerEntry((("order_" + orderId) + "_fulfilled1"), (orderFulfilled1 + paymentAmount1))
+          ]
+        }
+      }
+    }
+
+
+@Callable(i)
+func fulfillOrderAndSwapCashback (orderId: String,params: String,minToReceive: Int) = {
+    let orderOwner = valueOrErrorMessage(getString((("order_" + orderId) + "_owner")), "Cannot find order owner")
+    let orderStatus = getString((("order_" + orderId) + "_status"))
+    let orderAsset0 = valueOrErrorMessage(getString((("order_" + orderId) + "_token0")), "Cannot find token0")
+    let orderAmount0 = valueOrErrorMessage(getInteger((("order_" + orderId) + "_amount0")), "Cannot find amount0")
+    let orderFulfilled0 = valueOrErrorMessage(getInteger((("order_" + orderId) + "_fulfilled0")), "Cannot find fulfilled0")
+    let orderAmount0Left = (orderAmount0 - orderFulfilled0)
+    let orderAsset1 = valueOrErrorMessage(getString((("order_" + orderId) + "_token1")), "Cannot find token1")
+    let orderAmount1 = valueOrErrorMessage(getInteger((("order_" + orderId) + "_amount1")), "Cannot find amount1")
+    let orderFulfilled1 = valueOrErrorMessage(getInteger((("order_" + orderId) + "_fulfilled1")), "Cannot find fulfilled1")
+    let orderAmount1Left = (orderAmount1 - orderFulfilled1)
+    if (orderStatus != "active") then throw("Order already closed or canceled")
+    else if ((size(i.payments) != 1))
+    then throw("You have to provide payment")
+    else {
+        let callerAddress = i.caller
+        let ownerAddress = addressFromStringValue(orderOwner)
+        let paymentAsset1 = getAssetString(i.payments[0].assetId)
+        let paymentAmount1 = i.payments[0].amount
+        if (paymentAsset1 != orderAsset1) then throw("Wrong payment asset")
+        else if (orderAmount1Left > paymentAmount1) then throw("When you use this func partialy fullfill disabled, please use fulfillOrder")
+        else {
+          let aggregatorAddress = Address(fromBase58String(aggregator))
+          let cashbackAmount = (paymentAmount1 - orderAmount1Left)
+          strict balanceBefore = getDappBalance(getAssetBytes(orderAsset0))
+          strict swapTx = invoke(aggregatorAddress, "swap", [params, minToReceive], [AttachedPayment(getAssetBytes(orderAsset1), cashbackAmount)])
+          strict balanceAfter = getDappBalance(getAssetBytes(orderAsset0))
+          strict cashback = (balanceAfter - balanceBefore)
+          [
+            ScriptTransfer(callerAddress, orderAmount0Left, getAssetBytes(orderAsset0)), 
+            ScriptTransfer(callerAddress, cashback, getAssetBytes(orderAsset0)), 
+            ScriptTransfer(ownerAddress, orderAmount1Left, getAssetBytes(paymentAsset1)), 
+            IntegerEntry((("order_" + orderId) + "_fulfilled0"), (orderFulfilled0 + orderAmount0Left)), 
+            IntegerEntry((("order_" + orderId) + "_fulfilled1"), (orderFulfilled1 + orderAmount1Left)), 
+            StringEntry((("order_" + orderId) + "_status"), "closed")
+          ]
+        }
+      }
+    }
+
+
+@Callable(i)
+func cancelOrder (orderId: String, proxyCaller:String) = {
+    let orderOwner = valueOrErrorMessage(getString((("order_" + orderId) + "_owner")), "Cannot find order owner")
+    let orderStatus = getString((("order_" + orderId) + "_status"))
+    let orderAsset0 = valueOrErrorMessage(getString((("order_" + orderId) + "_token0")), "Cannot find token0")
+    let orderAmount0 = valueOrErrorMessage(getInteger((("order_" + orderId) + "_amount0")), "Cannot find amount0")
+    let orderFulfilled0 = valueOrErrorMessage(getInteger((("order_" + orderId) + "_fulfilled0")), "Cannot find fulfilled0")
+    let orderAmount0Left = (orderAmount0 - orderFulfilled0)
+    if (toBase58String(i.caller.bytes) != orderOwner && toBase58String(i.caller.bytes) != proxyAddressStr) then throw("You cannot cancel order")
+    else if ((orderStatus != "active")) then throw("order is closed or canceled")
+    else [
+      ScriptTransfer(addressFromStringValue(orderOwner), orderAmount0Left, getAssetBytes(orderAsset0)), 
+      StringEntry((("order_" + orderId) + "_status"), "canceled")
+    ]
+}
+
+
+@Verifier(tx)
+func verify () = sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey)
