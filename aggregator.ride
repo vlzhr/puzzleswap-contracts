@@ -200,7 +200,7 @@ func addTokenPuzzlePool(assetIdStr: String, poolAddressStr: String) = {
 
 @Callable(i)
 func shutdown(val: Boolean) = {
-  if (i.caller == Address(base58'3PMcMiMEs6w56NRGacksXtFG5zS7doE9fpL')) then {throw("wl only")}
+  if (i.caller != Address(base58'3PMcMiMEs6w56NRGacksXtFG5zS7doE9fpL')) then {throw("wl only")}
   else {
     [
       BooleanEntry("shutdown", val)
