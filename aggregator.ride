@@ -5,7 +5,7 @@
 
 let usdnIdStr = "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p"
 let usdnId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
-let limitContract = "3PPrfNMnk8z8QhZcqMyJk69mF65s2Rbz3B6"
+let limitContract = "3PFB6LJyShsCKEA1AU1U1WLbDazqyj6ZL9b"
 
 func tryGetString(key: String) = {
   match getString(this, key) {
@@ -74,7 +74,7 @@ func swapLimit(params: String, t0Str: String, t1Str: String) = {
     }
     let ordersLi = params.split(":")
     let t0 = getAssetBytes(t0Str)
-    strict result = FOLD<4>(ordersLi, t0, doLimit)
+    strict result = FOLD<10>(ordersLi, t0, doLimit)
     0
 }
 
