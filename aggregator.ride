@@ -79,6 +79,11 @@ func swapLimit(params: String, t0Str: String, t1Str: String) = {
 }
 
 func swapInternal(i: Invocation, routesStr: String, minToReceive: Int, refKey: String) = {
+
+  let shutdown = getBoolean("shutdown").valueOrElse(false)
+  if (shutdown) then {throw("shutdown")}
+  else {
+
   func doSwap(amount: Int, swap: String) = {
     let swapLi = swap.split(",")
     let (dApp, dAppType, t0Str, t1Str) = (swapLi[0], swapLi[1], swapLi[2], swapLi[3])
@@ -168,6 +173,8 @@ func swapInternal(i: Invocation, routesStr: String, minToReceive: Int, refKey: S
   ++
   # if asset1 is not added to puzzle fee pools
   (if( usdnFee == 0 ) then [ScriptTransfer(Address(base58'3P4kBiU4wr2yV1S5gMfu3MdkVvy7kxXHsKe'), feeAmount, asset1)] else [])
+  
+  }
 }
 
 @Callable(i)
@@ -183,10 +190,20 @@ func swapWithReferral(routesStr: String, minToReceive: Int, refKey: String) = {
 
 @Callable(i)
 func addTokenPuzzlePool(assetIdStr: String, poolAddressStr: String) = {
-  if (i.caller != Address(base58'3PLjwHcz9NEuaTo63NZR9B9okQiKQxZSbmf')) then {throw("admin only")}
+  if (i.caller != Address(base58'3PMcMiMEs6w56NRGacksXtFG5zS7doE9fpL')) then {throw("admin only")}
   else {
     [
       StringEntry("static_asset_"+assetIdStr+"_puzzlePool", poolAddressStr)
+    ]
+  }
+}
+
+@Callable(i)
+func shutdown(val: Boolean) = {
+  if (i.caller == Address(base58'3PMcMiMEs6w56NRGacksXtFG5zS7doE9fpL')) then {throw("wl only")}
+  else {
+    [
+      BooleanEntry("shutdown", val)
     ]
   }
 }
