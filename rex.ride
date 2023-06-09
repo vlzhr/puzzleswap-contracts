@@ -1,4 +1,4 @@
-{-# STDLIB_VERSION 5 #-}
+{-# STDLIB_VERSION 6 #-}
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
@@ -39,11 +39,17 @@ func getBalance(assetId: ByteVector|Unit) = {
   }
 }
 
+func getRandomNumber(variants: Int, txId: ByteVector, hatchingFinishHeight: Int, offset: Int) = {
+  let randomSeedBlock = blockInfoByHeight(hatchingFinishHeight-1).value()
+  let randomHash = sha256(txId + randomSeedBlock.vrf.value())
+  randomHash.toInt(offset*8) % variants
+}
+
 # ---- Callables ---- #
 
 @Callable(i)
 func exchangeThenTransfer(asset1IdStr: String, recipient: String, minToReceive: Int) = {
-  let request = i.transactionId.toBase58String()
+  let request = i.transactionId.toBase58String() + getRandomNumber(100000000000000000, asset1IdStr.fromBase58String(), height-2, minToReceive).toString()
   [
     StringEntry(request+"_sendTo", recipient),
     StringEntry(request+"_status", "open"),
@@ -62,6 +68,7 @@ func exchangeThenInvoke(asset1IdStr: String, dApp: String, function: String, arg
     StringEntry(request+"_args", args.makeString("|||")),
     StringEntry(request+"_status", "open"),
     IntegerEntry(request+"_minToReceive", minToReceive),
+    StringEntry(request+"_sendTo", i.caller.toString()),
 
     StringEntry("awaits_"+request, i.payments[0].assetId.getAssetString()+","+i.payments[0].amount.toString()+","+asset1IdStr)
   ]
@@ -69,7 +76,7 @@ func exchangeThenInvoke(asset1IdStr: String, dApp: String, function: String, arg
 
 @Callable(i)
 func cancelExchange(request: String) = {
-  let canCancel = tryGetString(request+"_sendTo") == i.caller.toString()
+  let canCancel = tryGetString(request+"_sendTo") == i.caller.toString() || i.caller.toString() == this.toString()
 
   if (canCancel) then {
     [
@@ -96,14 +103,14 @@ func puzzleSwap(request: String, routeStr: String) = {
     if (amount1 < tryGetInteger(request+"_minToReceive")) then {
       throw("amount to receive is too small")
     } else {
-      let sendAction = if (tryGetString(request+"_sendTo").addressFromString() != unit) then {
+      let sendAction = if (tryGetString(request+"_dApp") == "") then {
         [
           DeleteEntry(request+"_sendTo"),
           ScriptTransfer(tryGetString(request+"_sendTo").addressFromStringValue(), amount1, swapData[2].getAssetBytes())
         ]
       } else {
         strict inv2 = invoke(tryGetString(request+"_dApp").addressFromStringValue(), tryGetString(request+"_function"), 
-                            tryGetString(request+"_args").split("|||"), [AttachedPayment(swapData[2].getAssetBytes(), amount1)])
+                            if (tryGetString(request+"_args") == "") then {[]} else {tryGetString(request+"_args").split("|||")}, [AttachedPayment(swapData[2].getAssetBytes(), amount1)])
         [
           DeleteEntry(request+"_dApp"),
           DeleteEntry(request+"_function"),
