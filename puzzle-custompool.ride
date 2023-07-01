@@ -399,9 +399,7 @@ func init() = {
 @Callable(i)
 func generateIndex(needChange: Boolean) = {
   # throw("LP is closed yet")
-  if (isShutdown()) then {
-    throw("contract is on stop")
-  } else if (i.payments.size() != T) then {
+  if (i.payments.size() != T) then {
     throw("you need to attach all pool tokens. amount of pool tokens: " + T.toString())
   } else {
     if (!(checkTokensValidity(i.payments))) then {throw("wrong assets attached")} 
@@ -425,9 +423,7 @@ func stakeIndex() = {
   let addressStr = i.originCaller.toString()
   let pmt = i.payments[0]
 
-  if (isShutdown()) then {
-    throw("contract is on stop")
-  } else if (pmt.assetId.value() != tryGetBinary("global_poolToken_id")) then {throw("wrong asset attached")} else {
+  if (pmt.assetId.value() != tryGetBinary("global_poolToken_id")) then {throw("wrong asset attached")} else {
     indexStakeResult(addressStr, pmt.amount)
   }
 }
@@ -567,7 +563,7 @@ func swap(assetOut: String, minimum: Int) = {
         # update volume stats
         IntegerEntry("global_volume", tryGetInteger("global_volume") + volumeUpdate)
       ] ++ if (stakingTopUp == unit) then {[
-        ScriptTransfer(Address(base58'3P4kBiU4wr2yV1S5gMfu3MdkVvy7kxXHsKe'), protocolFee, feeAssetOut)
+        ScriptTransfer(Address(base58'3PFWAVKmXjfHXyzJb12jCbhP4Uhi9t4uWiD'), protocolFee, feeAssetOut)
       ]} else {[]}, 
       AmountOut
     )
