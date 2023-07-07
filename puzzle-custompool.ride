@@ -106,6 +106,7 @@ func calculateUsdnValue(assetId: ByteVector|Unit, amount: Int, aBalance: Int, gi
   let usdnInPool = assetIds.indexOf(usdnAssetId)
   let puzzleInPool = assetIds.indexOf(puzzleAssetId)
   let usdtInPool = assetIds.indexOf(usdtAssetId)
+  let usdtPptInPool = assetIds.indexOf(usdtPptAssetId)
   let wavesInPool = assetIds.indexOf(unit)
   let assetWeight = tryGetInteger("static_"+assetId.getAssetString()+"_weight")
 
@@ -122,6 +123,11 @@ func calculateUsdnValue(assetId: ByteVector|Unit, amount: Int, aBalance: Int, gi
     # USDT in pool
     let usdtWeight = AssetsWeights[usdtInPool.value()]
     let usdtBalance = tryGetInteger("global_"+usdtAssetIdStr+"_balance")
+    fraction( amount, usdtBalance / usdtWeight, aBalance / assetWeight )
+  } else if (feeAssetStr == usdtPptAssetIdStr) then {
+    # USDT-PPT in pool
+    let usdtWeight = AssetsWeights[usdtPptInPool.value()]
+    let usdtBalance = tryGetInteger("global_"+usdtPptAssetIdStr+"_balance")
     fraction( amount, usdtBalance / usdtWeight, aBalance / assetWeight )
   } else if (feeAssetStr == usdnAssetIdStr) then {
     # USDN in pool
