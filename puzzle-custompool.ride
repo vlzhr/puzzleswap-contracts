@@ -576,6 +576,13 @@ func swap(assetOut: String, minimum: Int) = {
   }
 }
 
+@Callable(i)
+func transferOwnership(newOwnerAddress: String) = {
+  if (i.caller.toString() != tryGetString("static_poolOwner")) then {throw("this call available only for pool owner")}
+  else {
+    [StringEntry("static_poolOwner", newOwnerAddress)]
+  }
+}
 
 @Verifier(tx)
 func verify() = {
