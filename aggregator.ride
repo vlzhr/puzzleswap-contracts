@@ -3,9 +3,11 @@
 {-# SCRIPT_TYPE ACCOUNT #-}
 
 
+
 let usdnIdStr = "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p"
 let usdnId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
 let limitContract = "3PFB6LJyShsCKEA1AU1U1WLbDazqyj6ZL9b"
+let tsnContract = "3PKz5jnJLohF2GjShQ7bG5H4BebdoA98zZ2"
 
 func tryGetString(key: String) = {
   match getString(this, key) {
@@ -100,7 +102,9 @@ func swapInternal(i: Invocation, routesStr: String, minToReceive: Int, refKey: S
       swapWX(t0Str, t1Str, amount0)
     } else if (dAppType == "limit") then {
         swapLimit(dApp, t0Str, t1Str)
-    } 
+    } else if (dAppType == "tsunami") then {
+        invoke(Address(tsnContract.fromBase58String()), "swap", [t1Str, 0], [AttachedPayment(t0, amount0)])
+    }
       else {
       throw("internal aggregator issue: unknow pool type")
     }
