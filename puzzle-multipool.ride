@@ -1,6 +1,34 @@
-{-# STDLIB_VERSION 5 #-}
+{-# STDLIB_VERSION 6 #-}
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
+
+let VERSION = "PZ-1.0.0"
+
+let usdnAssetId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
+let puzzleAssetId = base58'HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS'
+let usdtAssetId = base58'34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ'
+let usdtPptAssetId = base58'9wc3LXNA4TEBsXyKtoLE9mrbDD7WMHXvXrCjZvabLAsi'
+
+let usdnAssetIdStr = "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p"
+let puzzleAssetIdStr = "HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS"
+let usdtAssetIdStr = "34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ"
+let usdtPptAssetIdStr = "9wc3LXNA4TEBsXyKtoLE9mrbDD7WMHXvXrCjZvabLAsi"
+
+let supportedFeeAssetsStr = [
+  "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p",
+  "HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS",
+  "34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ",
+  "9wc3LXNA4TEBsXyKtoLE9mrbDD7WMHXvXrCjZvabLAsi"
+]
+
+let parentPoolAddress = Address(base58'3PFDgzu1UtswAkCMxqqQjbTeHaX4cMab8Kh')
+let masterAddress = Address(base58'3PLjwHcz9NEuaTo63NZR9B9okQiKQxZSbmf')
+let masterPubKey = base58'4z8CKSYQBKkzx7PBb5uBP1YPa6YAHRNTApW1sQVHT5eU'
+let oracleAddress = Address(base58'3P8d1E1BLKoD52y3bQJ1bDTd2TD1gpaLn9t')
+let stakingAddress = Address(base58'3PFTbywqxtFfukX3HyT881g4iW5K4QL3FAS')
+let feesAddress = Address(base58'3PFWAVKmXjfHXyzJb12jCbhP4Uhi9t4uWiD')
+let shutdownAddress = Address(base58'3PEpv9hRFWEEBU22WRnLsw1bH4YGtcU728o')
+
 
 func tryGetInteger(key: String) = {
   match getInteger(this, key) {
@@ -34,10 +62,10 @@ func getAssetBytes(assetIdStr: String) = {
   if (assetIdStr == "WAVES") then {unit} else {assetIdStr.fromBase58String()}
 }
 
-func addAssetBytesToList(accum: List[ByteVector], item: String) = { accum ++ [item.getAssetBytes()] }
-func addAssetWeightToList(accum: List[Int], item: ByteVector) = { accum ++ [tryGetInteger("static_" + item.getAssetString() + "_weight")] }
-func addAssetDecimalsToList(accum: List[Int], item: ByteVector) = { accum ++ [tryGetInteger("static_" + item.getAssetString() + "_decimals")] }
-func addAssetScaleToList(accum: List[Int], item: ByteVector) = { accum ++ [tryGetInteger("static_" + item.getAssetString() + "_scale")] }
+func addAssetBytesToList(accum: List[ByteVector|Unit], item: String) = { accum ++ [item.getAssetBytes()] }
+func addAssetWeightToList(accum: List[Int], item: ByteVector|Unit) = { accum ++ [tryGetInteger("static_" + item.getAssetString() + "_weight")] }
+func addAssetDecimalsToList(accum: List[Int], item: ByteVector|Unit) = { accum ++ [tryGetInteger("static_" + item.getAssetString() + "_decimals")] }
+func addAssetScaleToList(accum: List[Int], item: ByteVector|Unit) = { accum ++ [tryGetInteger("static_" + item.getAssetString() + "_scale")] }
 func addIntToList(accum: List[Int], item: String) = { accum ++ [item.parseIntValue()] }
 
 let T = tryGetInteger("static_tokensAmount")
@@ -48,7 +76,7 @@ let Scales = FOLD<10>(assetIds, [], addAssetScaleToList)
 
 let Fee = tryGetInteger("static_fee")
 
-let AssetsWeightsDecimals = 2
+let AssetsWeightsDecimals = 4
 let Scale = 10000
 let Scale8 = 1_0000_0000
 let FeeScale = 10000
@@ -59,7 +87,7 @@ let PoolTokenScale = pow(10, 0, PoolTokenDecimals, 0, 0, HALFUP)
 let earnedAssets = assetIds
 
 func isShutdown() = {
-  match getBoolean(Address(base58'3PEpv9hRFWEEBU22WRnLsw1bH4YGtcU728o'), "is_shutdown") {
+  match getBoolean(shutdownAddress, "is_shutdown") {
     case x: Boolean => x
     case _ => false
   }
@@ -87,16 +115,76 @@ func getMinPIssued(payments: List[AttachedPayment]) = {
   minPIssed
 }
 
-func calculateUsdnValue(assetId: ByteVector|Unit, amount: Int, aBalance: Int) = {
-  # to handle total volume value|Unit
-  let usdnId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
-  let usdnWeight = AssetsWeights[assetIds.indexOf(usdnId).value()]
-  let assetWeight = AssetsWeights[assetIds.indexOf(assetId).value()]
+func calculateUsdnValue(assetId: ByteVector|Unit, amount: Int, aBalance: Int, givenUsdnBalance: Int|Unit) = {
+  let usdnInPool = assetIds.indexOf(usdnAssetId)
+  let puzzleInPool = assetIds.indexOf(puzzleAssetId)
+  let usdtInPool = assetIds.indexOf(usdtAssetId)
+  let usdtPptInPool = assetIds.indexOf(usdtPptAssetId)
+  let wavesInPool = assetIds.indexOf(unit)
+  let assetWeight = tryGetInteger("static_"+assetId.getAssetString()+"_weight")
 
-  let usdnBalance = tryGetInteger(("global_"+usdnId.getAssetString()+"_balance"))
+  let feeAssetStr = tryGetString("static_feeToken")
 
-  fraction( amount, usdnBalance / usdnWeight, aBalance / assetWeight )
+  if (feeAssetStr == puzzleAssetIdStr) then {
+    # use PUZZLE to calculate
+    let puzzleWeight = AssetsWeights[assetIds.indexOf(puzzleAssetId).value()]
+    let puzzleBalance = tryGetInteger("global_"+puzzleAssetIdStr+"_balance")
+    let amountInPuzzle = fraction( amount, puzzleBalance / puzzleWeight, aBalance / assetWeight )
+    let puzzlePrice = getIntegerValue(parentPoolAddress, "global_lastPuzzlePrice")
+    fraction(amountInPuzzle*puzzlePrice, 1, Scale8)
+  } else if (feeAssetStr == usdtAssetIdStr) then {
+    # USDT in pool
+    let usdtWeight = AssetsWeights[usdtInPool.value()]
+    let usdtBalance = tryGetInteger("global_"+usdtAssetIdStr+"_balance")
+    fraction( amount, usdtBalance / usdtWeight, aBalance / assetWeight )
+  } else if (feeAssetStr == usdtPptAssetIdStr) then {
+    # USDT-PPT in pool
+    let usdtWeight = AssetsWeights[usdtPptInPool.value()]
+    let usdtBalance = tryGetInteger("global_"+usdtPptAssetIdStr+"_balance")
+    fraction( amount, usdtBalance / usdtWeight, aBalance / assetWeight )
+  } else if (feeAssetStr == usdnAssetIdStr) then {
+    # USDN in pool
+    let usdnWeight = AssetsWeights[assetIds.indexOf(usdnAssetId).value()]
+    let usdnBalance = match (givenUsdnBalance) {
+      case x: Int => givenUsdnBalance 
+      case _ => tryGetInteger("global_"+usdnAssetId.getAssetString()+"_balance")
+    }
+    fraction( amount, usdnBalance.value() / usdnWeight, aBalance / assetWeight )
+  } else {
+    # WAVES in pool
+    let wavesWeight = 3000
+    let wBalance = tryGetInteger("global_WAVES_balance") / 50 # assuming 1 WAVES = 2 USD
+
+    fraction( amount, wBalance / wavesWeight, aBalance / assetWeight )
+  }
 }
+
+
+func getPriceFromOracle(assetIdStr: String) = {
+  match getInteger(oracleAddress, assetIdStr+"_twap5B") {
+    case x: Int => x
+    case _ => 0
+  }
+}
+
+
+func calculateUsdValue(assetId: ByteVector|Unit, amount: Int, aBalance: Int) = {
+
+  let assetWeight = tryGetInteger("static_"+assetId.getAssetString()+"_weight")
+
+  let feeAssetStr = tryGetString("static_feeToken")
+  let feeAssetScale = getIntegerValue(this, "static_"+feeAssetStr+"_scale")
+  let feeAssetNum = assetIds.indexOf(feeAssetStr.getAssetBytes()).value()
+  let feeAssetWeight = AssetsWeights[feeAssetNum]
+  let feeAssetBalance = tryGetInteger("global_"+feeAssetStr+"_balance")
+  let valInFeeAsset = fraction( amount, feeAssetBalance / feeAssetWeight, aBalance / assetWeight )
+
+  let feeAssetPrice = getPriceFromOracle(feeAssetStr)
+
+  fraction( valInFeeAsset, feeAssetPrice, feeAssetScale )
+
+}
+
 
 func checkTokensValidity(payments: List[AttachedPayment]) = {
   func handler1(accum: List[ByteVector], payment: AttachedPayment) = {
@@ -160,8 +248,7 @@ func handlePoolTokensRedeem(PRedeemed: Int, userAddress: Address) = {
 func calculateOutAmount(AmountIn: Int, assetIn: ByteVector|Unit, assetOut: ByteVector|Unit, BalanceIn: Int, BalanceOut: Int) = {
   let IndexIn = assetIds.indexOf(assetIn).value()
   let IndexOut = assetIds.indexOf(assetOut).value()
-  
-  if (IndexIn == IndexOut) then { throw("wrong tokens pair") } 
+  if (IndexIn == IndexOut) then { AmountIn } 
   else {
     fraction( BalanceOut, 
               Scale8 * Scale8 - 
@@ -217,18 +304,18 @@ func claimResult(address: Address) = {
       IntegerEntry("global_lastCheck_" + assetIdStr + "_earnings", currentTokenEarnings - rewardAmount),
       IntegerEntry("global_lastCheck_" + assetIdStr + "_interest", currentTokenInterest),
       IntegerEntry(addressStr + "_lastCheck_" + assetIdStr + "_interest", currentTokenInterest)
-    ], accum._2 + calculateUsdnValue(assetId, rewardAmount, aBalance))
+    ], accum._2 + calculateUsdValue(assetId, rewardAmount, aBalance))
   }
   
   let accum = FOLD<10>(earnedAssets, ([], 0), handler)
-  accum._1 ++ [
+  (accum._1 ++ [
     IntegerEntry(addressStr+"_claimedRewardValue", tryGetInteger(addressStr+"_claimedRewardValue") + accum._2),
     IntegerEntry(addressStr+"_lastClaim", lastBlock.timestamp)
-  ]
+  ], accum._2)
 }
 
 func indexStakeResult(addressStr: String, amount: Int) = {
-    let li = claimResult(addressStr.addressFromStringValue())
+    let li = claimResult(addressStr.addressFromStringValue())._1
     li ++ [
       IntegerEntry(addressStr + "_indexStaked", tryGetInteger(addressStr + "_indexStaked") + amount),
       IntegerEntry("global_indexStaked", tryGetInteger("global_indexStaked") + amount)
@@ -236,15 +323,25 @@ func indexStakeResult(addressStr: String, amount: Int) = {
 }
 
 func sum(accum: Int, n: String) = {accum + n.parseIntValue()}
+func checkFeeAsset(accum: String, next: String) = { if (supportedFeeAssetsStr.indexOf(next) != unit && accum == "") then {next} else {accum} }
 
 @Callable(i)
-func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: String, poolDomain: String) = {
-  if (this != i.caller) then {throw("admin only")}
-  else if (poolDomain.size() > 13) then {throw("too large pool domain")}
-  else {
-    let assetIdsStrLi = assetIdsStr.split(",")
-    let assetIdsLi = FOLD<10>(assetIdsStrLi, [], addAssetBytesToList)
+func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: String, poolDomain: String, poolOwner: String, fee: Int) = {
+  let poolOwnerAddress = Address(poolOwner.fromBase58String())
 
+  let assetIdsStrLi = assetIdsStr.split(",")    
+  let assetIdsLi = FOLD<10>(assetIdsStrLi, [], addAssetBytesToList)
+  let feeAssetStr = FOLD<10>(assetIdsStrLi, "", checkFeeAsset)
+
+  if (isShutdown()) then {
+    throw("contract is on stop")
+  } 
+  else if (this != i.caller) then {throw("admin only")}
+  else if (feeAssetStr == "") then {throw("pool must have one of the supported fee assets in the composition")}
+  else if (poolDomain.size() > 13) then {throw("too large pool domain")}
+  else if (fee > 500 || fee < 50) then {throw("fee value must be between 50 and 500 (0.5-5%)")}
+  # TODO: check correctness of poolOwner, uniqueness of poolDomain
+  else {
     let assetWeightsStrLi = assetWeightsStr.split(",")
     let assetWeightsSum = FOLD<10>(assetWeightsStrLi, 0, sum)
 
@@ -253,7 +350,7 @@ func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: Strin
         accum
       } else {
         let assetDecimals = match (assetIdsLi[assetNum]) {
-          case x: ByteVector => assetInfo(assetIdsLi[assetNum]).value().decimals
+          case x: ByteVector => assetInfo(x).value().decimals
           case _ => 8
         }
         accum ++ [
@@ -264,14 +361,16 @@ func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: Strin
       }
     }
 
-    if (assetWeightsSum != 100) then {throw("sum of token weights must be equal to 100")} else {
+    if (assetWeightsSum != 10000) then {throw("sum of token weights must be equal to 10000")} else {
       FOLD<10>([0,1,2,3,4,5,6,7,8,9], [], addTokenDataEntries) ++ [
         StringEntry("static_tokenIds", assetIdsStr),
+        StringEntry("static_feeToken", feeAssetStr),
         StringEntry("static_tokenWeights", assetWeightsStr),
         IntegerEntry("static_tokensAmount", assetIdsLi.size()),
         StringEntry("static_poolDomain", poolDomain),
         StringEntry("static_baseTokenId", baseTokenIdStr),
-        IntegerEntry("static_fee", 200)
+        StringEntry("static_poolOwner", poolOwner),
+        IntegerEntry("static_fee", fee)
       ]
     }
   }
@@ -279,7 +378,9 @@ func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: Strin
 
 @Callable(i)
 func deInit() = {
-  if (i.caller != this) then {
+  if (isShutdown()) then {
+    throw("contract is on stop")
+  } else if (i.caller != this) then {
     throw("admin only")
   } else {
     [IntegerEntry("global_wasInited", 0)]
@@ -309,7 +410,9 @@ func init() = {
     FOLD<10>(payments, PoolTokenScale, handler)
   }
 
-  if (tryGetInteger("global_wasInited") > 0) then {  # PROD: > 0
+  if (isShutdown()) then {
+    throw("contract is on stop")
+  } else if (tryGetInteger("global_wasInited") > 0) then {  # PROD: > 0
     throw("pool already inited")
   } else {
     let initialPoolTokens = calculatePoolTokensAmount(i.payments)
@@ -325,7 +428,8 @@ func init() = {
         IntegerEntry("global_wasInited", 1),
         BinaryEntry("global_poolToken_id", poolTokenId),
         StringEntry("static_poolToken_idStr", poolTokenId.getAssetString()),
-        ScriptTransfer(i.caller, initialPoolTokens, poolTokenId)
+        IntegerEntry(i.caller.toString() + "_indexStaked", initialPoolTokens),
+        IntegerEntry("global_indexStaked", initialPoolTokens)
       ]
     }
 
@@ -346,8 +450,8 @@ func generateIndex(needChange: Boolean) = {
       let result = handlePoolTokensAdd(PIssued, i.payments, i.originCaller, needChange)
       
       (result ++ [
-        ScriptTransfer(i.caller, PIssued, tryGetBinary("global_poolToken_id")),
         reissue,
+        ScriptTransfer(i.caller, PIssued, tryGetBinary("global_poolToken_id")),
         IntegerEntry("global_poolToken_amount", tryGetInteger("global_poolToken_amount") + PIssued)
       ], PIssued)
     }
@@ -365,22 +469,37 @@ func stakeIndex() = {
 }
 
 @Callable(i)
-func unstakeIndex(puzzleAmount: Int) = {
+func unstakeIndex(indexAmount: Int) = {
   let addressStr = i.originCaller.toString()
 
-  let puzzleAvailable = tryGetInteger(addressStr + "_indexStaked")
-  if (puzzleAmount > puzzleAvailable) then {throw("you don't have index tokens available")} else {
-    claimResult(i.originCaller) ++ [
-      IntegerEntry(addressStr + "_indexStaked", puzzleAvailable - puzzleAmount),
-      IntegerEntry("global_indexStaked", tryGetInteger("global_indexStaked") - puzzleAmount),
-      ScriptTransfer(i.caller, puzzleAmount, getBinaryValue("global_poolToken_id"))
+  let indexAvailable = tryGetInteger(addressStr + "_indexStaked")
+  if (isShutdown()) then {
+    throw("contract is on stop")
+  } else if (indexAmount > indexAvailable) then {throw("you don't have index tokens available")} 
+  else if (isShutdown()) then {
+    throw("contract is on stop")
+  } 
+  else {
+    claimResult(i.originCaller)._1 ++ [
+      IntegerEntry(addressStr + "_indexStaked", indexAvailable - indexAmount),
+      IntegerEntry("global_indexStaked", tryGetInteger("global_indexStaked") - indexAmount),
+      ScriptTransfer(i.caller, indexAmount, getBinaryValue("global_poolToken_id"))
     ]
   }
 }
 
 @Callable(i)
 func claimIndexRewards() = {
-  claimResult(i.caller)
+  if (isShutdown()) then {
+    throw("contract is on stop")
+  } else {
+    claimResult(i.caller)
+  }
+}
+
+@Callable(i)
+func evaluateClaim(user: String) = {
+  ([], claimResult(user.addressFromStringValue())._2)
 }
 
 
@@ -390,6 +509,9 @@ func redeemIndex(sendToOrigin: Boolean) = {
   let pmt = i.payments[0]
   if (pmt.assetId != tryGetBinary("global_poolToken_id")) then {
     throw("please attach pool share token")
+  } 
+  else if (isShutdown()) then {
+    throw("contract is on stop")
   } else {
     let PRedeemed = pmt.amount
     let result = handlePoolTokensRedeem(PRedeemed, if (sendToOrigin) then {i.originCaller} else {i.caller})
@@ -404,80 +526,98 @@ func redeemIndex(sendToOrigin: Boolean) = {
 @Callable(i)
 func swap(assetOut: String, minimum: Int) = {
   # throw("stop")
-  let pmt = i.payments[0].value()
+  # markup all assets
+  let pmt = if (i.payments.size() == 1) then {i.payments[0].value()} else {throw("please attach exactly one payment")}
   let AmountIn = i.payments[0].amount.value()
   let AssetIn = pmt.assetId
   let AssetOut = assetOut.getAssetBytes()
+  let feeAssetOutStr = tryGetString("static_feeToken")
+  let feeAssetOut = if (feeAssetOutStr == "") then {usdnAssetId} else {feeAssetOutStr.getAssetBytes()}
 
+  # markup all asset numbers
   let AssetInBalance = tryGetInteger("global_"+AssetIn.getAssetString()+"_balance")
   let AssetOutBalance = tryGetInteger("global_"+assetOut+"_balance")
+  let feeAmountIn = fraction(AmountIn, Fee, FeeScale)
+  let cleanAmountIn = AmountIn - feeAmountIn
 
-  let AmountOut = calculateOutAmount(AmountIn, AssetIn, AssetOut, AssetInBalance, AssetOutBalance)
-  let feeAmount = fraction(AmountOut, Fee, FeeScale)
-  let cleanAmountOut = AmountOut - feeAmount
+  # calculate "out" numbers
+  let AmountOut = calculateOutAmount(cleanAmountIn, AssetIn, AssetOut, AssetInBalance, AssetOutBalance)
+  let AssetOutBalance2 = AssetOutBalance - AmountOut
+  let AssetInBalance2 = AssetInBalance + cleanAmountIn
+  let feeAssetOutBalance = 
+                            if (feeAssetOut == AssetIn) then {AssetInBalance2} 
+                            else if (feeAssetOut == AssetOut) then {AssetOutBalance2} 
+                            else {tryGetInteger("global_"+feeAssetOut.getAssetString()+"_balance")}
+  let feeAmountOut = calculateOutAmount(feeAmountIn, AssetIn, feeAssetOut, AssetInBalance, feeAssetOutBalance)
 
-  if (cleanAmountOut < minimum) then {
-    throw("amount to recieve is lower than given one: " + cleanAmountOut.toString())
+  # do all the verifications
+  # TODO: verification that realPrice <= marketPrice (just in case)
+  if (AmountOut < minimum) then {
+    throw("amount to recieve is lower than given one")
   } 
+  else if (AssetOut == AssetIn) then {
+    throw("this swap is not allowed")
+  }
   else if (AssetOutBalance - AmountOut < 0) then {
     throw("contract is out of reserves")
   }
+  else if (isShutdown()) then {
+    throw("contract is on stop")
+  }
   else {
-    let newBalanceIn = AssetInBalance + AmountIn
-    let newBalanceOut = AssetOutBalance - AmountOut
+    # top up protocol fee
+    let creatorFee = fraction(feeAmountOut, 1, 10)
+    let protocolFee = fraction(feeAmountOut, 4, 10)
+    strict stakingTopUp = if (feeAssetOut == usdnAssetId || feeAssetOut == puzzleAssetId) then {
+      reentrantInvoke(stakingAddress, "topUpReward", [], [AttachedPayment(feeAssetOut, protocolFee)])
+    } else {unit}
+  
+    # calculate state changes
+    let newBalanceIn = AssetInBalance2
+    let newBalanceOut = AssetOutBalance2 - (if (AssetOut == feeAssetOut) then {feeAmountOut} else {0})
+    let newBalanceFeeAsset = if (feeAssetOut != AssetIn && feeAssetOut != AssetOut) then {feeAssetOutBalance - feeAmountOut} else {unit}
 
-    let usdnAssetId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
+    # prepare state changes
+    let assetInChange = IntegerEntry("global_"+AssetIn.getAssetString()+"_balance", newBalanceIn)
+    let assetOutChange = IntegerEntry("global_"+assetOut+"_balance", newBalanceOut)
+    let feeAssetOutChange = if (newBalanceFeeAsset != unit) 
+                            then {IntegerEntry("global_"+feeAssetOut.getAssetString()+"_balance", newBalanceFeeAsset.value())} 
+                            else {StringEntry("hello", "world")}
 
-    if (usdnAssetId == AssetOut) then {
-      let usdnFeeAmount = feeAmount
-      let protocolUsdnFee = fraction(usdnFeeAmount, 4, 10)
+    let volumeUpdate = calculateUsdnValue(AssetIn, AmountIn, AssetInBalance, feeAssetOutBalance)
+    let volumeUsdUpdate = calculateUsdValue(AssetIn, AmountIn, AssetInBalance)
 
-      strict stakingTopUp = reentrantInvoke(Address(base58'3PFTbywqxtFfukX3HyT881g4iW5K4QL3FAS'), "topUpReward", [], [AttachedPayment(usdnAssetId, protocolUsdnFee)])
+    (
+      [
+        # change state with new balance values
+        assetOutChange,
+        assetInChange,
+        feeAssetOutChange,
 
-      (
-        [
-          IntegerEntry("global_"+assetOut+"_balance", newBalanceOut),
-          IntegerEntry("global_"+AssetIn.getAssetString()+"_balance", newBalanceIn),
+        # send amountOut to the user
+        ScriptTransfer(i.caller, AmountOut, AssetOut),
 
-          ScriptTransfer(i.caller, cleanAmountOut, AssetOut),
-          IntegerEntry("global_volume", tryGetInteger("global_volume") + calculateUsdnValue(AssetIn, AmountIn, AssetInBalance))
-        ], 
-        cleanAmountOut
-      )
-    } else {
-      let usdnBalance = if (AssetIn == usdnAssetId) then {newBalanceIn} else {
-        tryGetInteger("global_"+usdnAssetId.getAssetString()+"_balance")
-      }
+        # send fee to the pool creator
+        ScriptTransfer(tryGetString("static_poolOwner").addressFromStringValue(), creatorFee, feeAssetOut),
+        IntegerEntry("global_earnedByOwner", tryGetInteger("global_earnedByOwner") + creatorFee),
 
-      let usdnFeeAmount = calculateOutAmount(feeAmount, AssetOut, usdnAssetId, newBalanceOut, usdnBalance)
-      let protocolUsdnFee = fraction(usdnFeeAmount, 4, 10)
-
-      strict stakingTopUp = reentrantInvoke(Address(base58'3PFTbywqxtFfukX3HyT881g4iW5K4QL3FAS'), "topUpReward", [], [AttachedPayment(usdnAssetId, protocolUsdnFee)])
-
-      let usdnBalanceChangeEntry = IntegerEntry("global_"+usdnAssetId.toBase58String()+"_balance", usdnBalance - usdnFeeAmount)
-      let balanceChanges = 
-        if (AssetIn == usdnAssetId) then {
-          [usdnBalanceChangeEntry]
-        } else {
-          [usdnBalanceChangeEntry, IntegerEntry("global_"+AssetIn.getAssetString()+"_balance", newBalanceIn)]
-        }
-      
-      (
-        [
-          IntegerEntry("global_"+assetOut+"_balance", newBalanceOut + feeAmount),
-          ScriptTransfer(i.caller, cleanAmountOut, AssetOut),
-          IntegerEntry("global_volume", tryGetInteger("global_volume") + calculateUsdnValue(AssetIn, AmountIn, AssetInBalance))
-        ] ++ balanceChanges, 
-        cleanAmountOut
-      )
-    }
+        # update volume stats
+        IntegerEntry("global_volume", tryGetInteger("global_volume") + volumeUpdate),
+        IntegerEntry("global_volume_usd", tryGetInteger("global_volume_usd") + volumeUsdUpdate)
+      ] ++ if (stakingTopUp == unit) then {[
+        ScriptTransfer(feesAddress, protocolFee, feeAssetOut)
+      ]} else {[]}, 
+      AmountOut
+    )
   }
 }
 
 @Callable(i)
-func flashLoan(assetIdStr: String, amount: Int, actionsStr: String) = {
-  let actions = actionsStr.split("|")
-  []
+func transferOwnership(newOwnerAddress: String) = {
+  if (i.caller.toString() != tryGetString("static_poolOwner")) then {throw("this call available only for pool owner")}
+  else {
+    [StringEntry("static_poolOwner", newOwnerAddress)]
+  }
 }
 
 @Verifier(tx)
@@ -485,8 +625,6 @@ func verify() = {
   if (isShutdown()) then {
     false
   } else {
-    sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey)
+    sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey) || sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey)
   }
 }
-
-
