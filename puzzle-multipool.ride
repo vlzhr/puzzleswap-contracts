@@ -2,7 +2,7 @@
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
-let VERSION = "PZ-1.0.0"
+let VERSION = "PZ-1.0.1 TEST"
 
 let usdnAssetId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
 let puzzleAssetId = base58'HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS'
@@ -78,7 +78,8 @@ let Fee = tryGetInteger("static_fee")
 
 let AssetsWeightsDecimals = 4
 let Scale = 10000
-let Scale8 = 1_0000_0000
+let Scale8 = 100000000
+let Scale16 = 10000000000000000
 let FeeScale = 10000
 
 let PoolTokenDecimals = 8 # if (T > 4) then {8} else {T + 2}
@@ -93,14 +94,23 @@ func isShutdown() = {
   }
 }
 
-func getCurrentTokenBalance(tokenType: Int) = {
-  let tokenId = assetIds[tokenType].getAssetString()
-  tryGetInteger("global_"+tokenId+"_balance")
+func getCurrentTokenBalance(tokenNum: Int) = {
+  let tokenIdStr = assetIds[tokenNum].getAssetString()
+  tryGetInteger("global_"+tokenIdStr+"_balance")
 }
+
+func getKMult() = {
+  match getInteger("static_KMult") {
+    case x: Int => x
+    case _ => Scale16
+  }
+}
+
+func getVirtualPoolTokenAmount() = {fraction(tryGetInteger("global_poolToken_amount"), getKMult(), Scale16)}
 
 func calculatePIssued(amount: Int, tokenId: ByteVector|Unit) = {
   # P issued = pool tokens to issue
-  let Psupply = tryGetInteger("global_poolToken_amount")
+  let Psupply = getVirtualPoolTokenAmount()
   let Balance = tryGetInteger("global_"+tokenId.getAssetString()+"_balance")
   fraction(amount, Psupply, Balance, DOWN)
 }
@@ -208,7 +218,7 @@ func handlePoolTokensAdd(PIssued: Int, payments: List[AttachedPayment], userAddr
 
   func handleTokenChange(accum: List[IntegerEntry|ScriptTransfer], tokenId: ByteVector|Unit) = {
     let Bk = tryGetInteger("global_"+tokenId.getAssetString()+"_balance")
-    let PSupply = tryGetInteger("global_poolToken_amount")
+    let PSupply = getVirtualPoolTokenAmount()
     let tokenDecimals = tryGetInteger("static_"+tokenId.getAssetString()+"_scale")
     let Dk = fraction((fraction(PSupply + PIssued, tokenDecimals, PSupply, CEILING) - tokenDecimals), Bk, tokenDecimals, CEILING)  # deposited amount of token K
 
@@ -227,7 +237,7 @@ func handlePoolTokensAdd(PIssued: Int, payments: List[AttachedPayment], userAddr
 func handlePoolTokensRedeem(PRedeemed: Int, userAddress: Address) = {
   func handleTokenRedeem(accum: List[IntegerEntry|ScriptTransfer], tokenId: ByteVector|Unit) = {
     let Bk = tryGetInteger("global_"+tokenId.getAssetString()+"_balance")
-    let PSupply = tryGetInteger("global_poolToken_amount")
+    let PSupply = getVirtualPoolTokenAmount()
     let tokenDecimals = tryGetInteger("static_"+tokenId.getAssetString()+"_scale")
 
     let amount = fraction(
@@ -370,7 +380,8 @@ func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: Strin
         StringEntry("static_poolDomain", poolDomain),
         StringEntry("static_baseTokenId", baseTokenIdStr),
         StringEntry("static_poolOwner", poolOwner),
-        IntegerEntry("static_fee", fee)
+        IntegerEntry("static_fee", fee),
+        IntegerEntry("static_KMult", Scale16)
       ]
     }
   }
@@ -432,8 +443,16 @@ func init() = {
         IntegerEntry("global_indexStaked", initialPoolTokens)
       ]
     }
-
   }
+}
+
+@Callable(i)
+func reset() = {
+  [
+    IntegerEntry("global_poolToken_amount", 200000000),
+    IntegerEntry("global_WAVES_balance", 400000000),
+    IntegerEntry("global_HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS_balance", 100000000)
+  ]
 }
 
 @Callable(i)
@@ -444,17 +463,39 @@ func generateIndex(needChange: Boolean) = {
   } else {
     if (!(checkTokensValidity(i.payments))) then {throw("wrong assets attached")} 
     else {
-      let PIssued = getMinPIssued(i.payments)
-      let reissue = Reissue(getBinaryValue("global_poolToken_id"), PIssued, true)
+      let PIssuedNoMult = getMinPIssued(i.payments)
+      let result = handlePoolTokensAdd(PIssuedNoMult, i.payments, i.originCaller, needChange)
 
-      let result = handlePoolTokensAdd(PIssued, i.payments, i.originCaller, needChange)
+      let PIssuedWithMult = fraction(PIssuedNoMult, Scale16, getKMult())
+      let reissue = Reissue(getBinaryValue("global_poolToken_id"), PIssuedWithMult, true)
       
       (result ++ [
         reissue,
-        ScriptTransfer(i.caller, PIssued, tryGetBinary("global_poolToken_id")),
-        IntegerEntry("global_poolToken_amount", tryGetInteger("global_poolToken_amount") + PIssued)
-      ], PIssued)
+        ScriptTransfer(i.caller, PIssuedWithMult, tryGetBinary("global_poolToken_id")),
+        IntegerEntry("global_poolToken_amount", tryGetInteger("global_poolToken_amount") + PIssuedWithMult)
+      ], PIssuedWithMult)
     }
+  }
+}
+
+@Callable(i)
+func redeemIndex(sendToOrigin: Boolean) = {
+  # throw("LP is closed yet")
+  let pmt = i.payments[0]
+  if (pmt.assetId != tryGetBinary("global_poolToken_id")) then {
+    throw("please attach pool share token")
+  } 
+  else if (isShutdown()) then {
+    throw("contract is on stop")
+  } else {
+    let PRedeemedWithMult = pmt.amount
+    let PRedeemedWithNoMult = fraction(PRedeemedWithMult, getKMult(), Scale16)
+    let result = handlePoolTokensRedeem(PRedeemedWithNoMult, if (sendToOrigin) then {i.originCaller} else {i.caller})
+
+    result ++ [
+      Burn(tryGetBinary("global_poolToken_id"), PRedeemedWithMult),
+      IntegerEntry("global_poolToken_amount", tryGetInteger("global_poolToken_amount") - PRedeemedWithMult)
+    ]
   }
 }
 
@@ -501,27 +542,6 @@ func claimIndexRewards() = {
 func evaluateClaim(user: String) = {
   ([], claimResult(user.addressFromStringValue())._2)
 }
-
-
-@Callable(i)
-func redeemIndex(sendToOrigin: Boolean) = {
-  # throw("LP is closed yet")
-  let pmt = i.payments[0]
-  if (pmt.assetId != tryGetBinary("global_poolToken_id")) then {
-    throw("please attach pool share token")
-  } 
-  else if (isShutdown()) then {
-    throw("contract is on stop")
-  } else {
-    let PRedeemed = pmt.amount
-    let result = handlePoolTokensRedeem(PRedeemed, if (sendToOrigin) then {i.originCaller} else {i.caller})
-    result ++ [
-      Burn(tryGetBinary("global_poolToken_id"), PRedeemed),
-      IntegerEntry("global_poolToken_amount", tryGetInteger("global_poolToken_amount") - PRedeemed)
-    ]
-  }
-}
-
 
 @Callable(i)
 func swap(assetOut: String, minimum: Int) = {
@@ -620,11 +640,56 @@ func transferOwnership(newOwnerAddress: String) = {
   }
 }
 
+@Callable(i)
+func doRebalancing(assetWeightsStr: String) = {  
+  let assetWeightsStrLi = assetWeightsStr.split(",")
+  let assetWeightsSum = FOLD<10>(assetWeightsStrLi, 0, sum)
+
+  let assetIdsStrLi = tryGetString("static_tokenIds").split(",")    
+
+  if (i.caller != this) then {throw("this call available only for admin")}
+  else if (assetWeightsSum != 10000) then {throw("sum of token weights must be equal to 10000")}
+  else {
+    # getting oldKMult from state
+    let oldKMult = getKMult()
+
+    # calculating newKMult
+    func handler(pars: (Int, String), assetId: ByteVector|Unit) = {
+      let accum = pars._1
+      let assetIdStr = assetId.getAssetString()
+      func handler2(accum: Int, n: ByteVector|Unit) = {
+        if (n == assetId) then {assetIds.indexOf(n).value()} else {accum}
+      }
+      let Token = FOLD<10>(assetIds, 1, handler2)
+      let balance = tryGetInteger("global_"+assetIdStr+"_balance")
+      let weight = if (pars._2 == "new") then assetWeightsStrLi[Token].parseIntValue() else tryGetInteger("static_"+assetIdStr+"_weight")
+      (fraction(accum, pow(balance, Decimals[Token], weight, AssetsWeightsDecimals, 8, FLOOR), Scale8), pars._2)
+    }
+    let newK = (FOLD<10>(assetIds, (PoolTokenScale, "new"), handler))._1
+    let oldK = (FOLD<10>(assetIds, (PoolTokenScale, "old"), handler))._1
+    let newKMult = fraction(oldKMult, newK, oldK)
+    
+    # preparing data for state
+    func addTokenDataEntries(accum: List[IntegerEntry], assetNum: Int) = {
+      if (assetNum >= assetWeightsStrLi.size()) then {
+        accum
+      } else {
+        accum ++ [IntegerEntry("static_"+assetIdsStrLi[assetNum]+"_weight", assetWeightsStrLi[assetNum].parseInt().value())]
+      }
+    }
+
+    FOLD<10>([0,1,2,3,4,5,6,7,8,9], [], addTokenDataEntries) ++ [
+      IntegerEntry("static_KMult", newKMult)
+    ]
+  }
+}
+
 @Verifier(tx)
 func verify() = {
   if (isShutdown()) then {
     false
   } else {
-    sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey) || sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey)
+    # sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey) || sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey)
+    sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey)
   }
 }
