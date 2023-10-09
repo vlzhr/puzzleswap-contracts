@@ -8,6 +8,7 @@ let usdnIdStr = "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p"
 let usdnId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
 let limitContract = "3PFB6LJyShsCKEA1AU1U1WLbDazqyj6ZL9b"
 let tsnContract = "3PKz5jnJLohF2GjShQ7bG5H4BebdoA98zZ2"
+let lendProxyContract = "3PGxMZtMnNT9pJCvXxXV4LzKqXsjvQ9XpfR"
 
 func tryGetString(key: String) = {
   match getString(this, key) {
@@ -80,6 +81,18 @@ func swapLimit(params: String, t0Str: String, t1Str: String) = {
     0
 }
 
+func swapLend(params: String, t0Str: String, t1Str: String, amount: Int) = {
+    let arr = params.split("-")
+    let (pool_address, asset, dir) = (arr[0], arr[1], arr[2])
+    let proxyAdr = Address(lendProxyContract.fromBase58String())
+    let functionName = if (dir == "0") then {
+        "mintPL"
+    } else {
+        "redeemPL"
+    }
+    invoke(proxyAdr, functionName, [0], [AttachedPayment(getAssetBytes(t0Str), amount)])
+}
+
 func swapInternal(i: Invocation, routesStr: String, minToReceive: Int, refKey: String) = {
 
   let shutdown = getBoolean("shutdown").valueOrElse(false)
@@ -104,6 +117,8 @@ func swapInternal(i: Invocation, routesStr: String, minToReceive: Int, refKey: S
         swapLimit(dApp, t0Str, t1Str)
     } else if (dAppType == "tsunami") then {
         invoke(Address(tsnContract.fromBase58String()), "swap", [t1Str, 0], [AttachedPayment(t0, amount0)])
+    } else if (dAppType == "lend") then {
+        swapLend(dApp, t0Str, t1Str, amount0)
     }
       else {
       throw("internal aggregator issue: unknow pool type")
