@@ -702,7 +702,7 @@ func doRebalancingWithNewTokens(assetIdsStr: String, assetWeightsStr: String, ba
   func addAssetBalanceToLi(li: List[Int], assetId: ByteVector|Unit) = {li ++ [(FOLD<10>(pmt, (0, assetId), findAssetPayment))._1]}
   let attachedBalances = FOLD<10>(newAssetIds, [], addAssetBalanceToLi)
 
-  if (i.caller != this) then {throw("this call available only for admin")}
+  if (i.caller != Address(base58'3P8qVX189qpoTJZQQQdKS9endHK5sxWsvrd')) then {throw("this call available only for admin")}
   else if (assetWeightsSum != 10000) then {throw("sum of token weights must be equal to 10000")}
   else if (feeAssetStr == "") then {throw("pool must have one of the supported fee assets in the composition")}
   else if (newAssetIdsStrLi.indexOf(baseTokenIdStr) == unit) then {throw("base token has to be included in the composition")}
@@ -715,7 +715,7 @@ func doRebalancingWithNewTokens(assetIdsStr: String, assetWeightsStr: String, ba
 
     # calculating newK - basically multiplying all new assets: A1^W1 * A2^W2 * ...
     func myltiplyAssetsForK(pars: Int, assetId: ByteVector|Unit) = {
-      func findAssetNum(accum: Int, n: ByteVector|Unit) = {if (n == assetId) then {assetIds.indexOf(n).value()} else {accum}}
+      func findAssetNum(accum: Int, n: ByteVector|Unit) = {if (n == assetId) then {newAssetIds.indexOf(n).value()} else {accum}}
 
       let currentK = pars
       let assetIdStr = assetId.getAssetString()
@@ -725,10 +725,11 @@ func doRebalancingWithNewTokens(assetIdsStr: String, assetWeightsStr: String, ba
       let balanceInState = tryGetInteger("global_"+assetIdStr+"_balance")
       let balanceInPayment = attachedBalances[TokenNum]
       let balance = balanceInState + balanceInPayment
+      let assetDecimals = if assetId == unit then 8 else {assetInfo(assetId.value()).value().decimals}
 
       if (balance <= 0) then {throw("you need to attach all new assets in payment. this asset is missed: " + assetIdStr)}
       else {
-        fraction(currentK, pow(balance, Decimals[TokenNum], weight, AssetsWeightsDecimals, 8, FLOOR), Scale8)
+        fraction(currentK, pow(balance, assetDecimals, weight, AssetsWeightsDecimals, 8, FLOOR), Scale8)
       }
     }
     let newK = FOLD<10>(newAssetIds, PoolTokenScale, myltiplyAssetsForK)
@@ -738,14 +739,28 @@ func doRebalancingWithNewTokens(assetIdsStr: String, assetWeightsStr: String, ba
     
     # preparing data for state
     func addTokenDataEntries(accum: List[IntegerEntry], assetNum: Int) = {
+      let assetIdStr = newAssetIdsStrLi[assetNum]
+      let assetId = newAssetIds[assetNum]
+      let assetDecimals = if assetId == unit then 8 else {assetInfo(assetId.value()).value().decimals}
+
+      let newAssetData = if (deprecatedAssets.indexOf(assetIdStr) == unit) then {[
+        IntegerEntry("global_"+assetIdStr+"_balance", attachedBalances[assetNum]),
+        IntegerEntry("static_"+assetIdStr+"_scale", pow(10, 0, assetDecimals, 0, 0, DOWN)),
+        IntegerEntry("static_"+assetIdStr+"_decimals", assetDecimals)
+      ]} else {[]}
+
       if (assetNum >= newAssetWeightsStrLi.size()) then {
         accum
       } else {
-        accum ++ [IntegerEntry("static_"+newAssetIdsStrLi[assetNum]+"_weight", newAssetWeightsStrLi[assetNum].parseInt().value())]
+        accum ++ [IntegerEntry("static_"+assetIdStr+"_weight", newAssetWeightsStrLi[assetNum].parseInt().value())] ++ newAssetData
       }
     }
 
     FOLD<10>([0,1,2,3,4,5,6,7,8,9], [], addTokenDataEntries) ++ [
+      StringEntry("static_tokenIds", assetIdsStr),
+      StringEntry("static_feeToken", feeAssetStr),
+      StringEntry("static_tokenWeights", assetWeightsStr),
+      IntegerEntry("static_tokensAmount", newAssetIds.size()),
       IntegerEntry("static_KMult", newKMult)
     ]
   }
