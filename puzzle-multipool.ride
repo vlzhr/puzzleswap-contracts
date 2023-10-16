@@ -2,7 +2,7 @@
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
-let VERSION = "PZ-1.0.1 TEST"
+let VERSION = "PZ-1.0.2 TEST"
 
 let usdnAssetId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
 let puzzleAssetId = base58'HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS'
@@ -675,6 +675,73 @@ func doRebalancing(assetWeightsStr: String) = {
         accum
       } else {
         accum ++ [IntegerEntry("static_"+assetIdsStrLi[assetNum]+"_weight", assetWeightsStrLi[assetNum].parseInt().value())]
+      }
+    }
+
+    FOLD<10>([0,1,2,3,4,5,6,7,8,9], [], addTokenDataEntries) ++ [
+      IntegerEntry("static_KMult", newKMult)
+    ]
+  }
+}
+
+@Callable(i)
+func doRebalancingWithNewTokens(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: String) = {  
+  let newAssetWeightsStrLi = assetWeightsStr.split(",")
+  let assetWeightsSum = FOLD<10>(newAssetWeightsStrLi, 0, sum)
+  let pmt = i.payments
+
+  let prevAssetIdsStrLi = tryGetString("static_tokenIds").split(",")
+  let newAssetIdsStrLi = assetIdsStr.split(",")
+  let newAssetIds = FOLD<10>(newAssetIdsStrLi, [], addAssetBytesToList)
+  let feeAssetStr = FOLD<10>(newAssetIdsStrLi, "", checkFeeAsset) 
+
+  func findStrInLi(accum: List[String], next: String) = {if newAssetIdsStrLi.indexOf(next) != unit then accum ++ [next] else accum}
+  let deprecatedAssets = FOLD<10>(prevAssetIdsStrLi, [], findStrInLi)
+
+  func findAssetPayment(current: (Int, ByteVector|Unit), next: AttachedPayment) = {if next.assetId == current._2 then (next.amount, current._2) else {current}}
+  func addAssetBalanceToLi(li: List[Int], assetId: ByteVector|Unit) = {li ++ [(FOLD<10>(pmt, (0, assetId), findAssetPayment))._1]}
+  let attachedBalances = FOLD<10>(newAssetIds, [], addAssetBalanceToLi)
+
+  if (i.caller != this) then {throw("this call available only for admin")}
+  else if (assetWeightsSum != 10000) then {throw("sum of token weights must be equal to 10000")}
+  else if (feeAssetStr == "") then {throw("pool must have one of the supported fee assets in the composition")}
+  else if (newAssetIdsStrLi.indexOf(baseTokenIdStr) == unit) then {throw("base token has to be included in the composition")}
+  else {
+    # getting oldKMult from state
+    let oldKMult = getKMult()
+
+    # getting oldK from vurtual pool token amount; TODO: compare with real K calculation by multiplying
+    let oldK = getVirtualPoolTokenAmount()
+
+    # calculating newK - basically multiplying all new assets: A1^W1 * A2^W2 * ...
+    func myltiplyAssetsForK(pars: Int, assetId: ByteVector|Unit) = {
+      func findAssetNum(accum: Int, n: ByteVector|Unit) = {if (n == assetId) then {assetIds.indexOf(n).value()} else {accum}}
+
+      let currentK = pars
+      let assetIdStr = assetId.getAssetString()
+      let TokenNum = FOLD<10>(newAssetIds, 1, findAssetNum)
+      let weight = newAssetWeightsStrLi[TokenNum].parseIntValue()
+
+      let balanceInState = tryGetInteger("global_"+assetIdStr+"_balance")
+      let balanceInPayment = attachedBalances[TokenNum]
+      let balance = balanceInState + balanceInPayment
+
+      if (balance <= 0) then {throw("you need to attach all new assets in payment. this asset is missed: " + assetIdStr)}
+      else {
+        fraction(currentK, pow(balance, Decimals[TokenNum], weight, AssetsWeightsDecimals, 8, FLOOR), Scale8)
+      }
+    }
+    let newK = FOLD<10>(newAssetIds, PoolTokenScale, myltiplyAssetsForK)
+
+    # calculating newKMult
+    let newKMult = fraction(oldKMult, newK, oldK)
+    
+    # preparing data for state
+    func addTokenDataEntries(accum: List[IntegerEntry], assetNum: Int) = {
+      if (assetNum >= newAssetWeightsStrLi.size()) then {
+        accum
+      } else {
+        accum ++ [IntegerEntry("static_"+newAssetIdsStrLi[assetNum]+"_weight", newAssetWeightsStrLi[assetNum].parseInt().value())]
       }
     }
 
