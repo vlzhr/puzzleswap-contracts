@@ -93,6 +93,21 @@ func swapLend(params: String, t0Str: String, t1Str: String, amount: Int) = {
     invoke(proxyAdr, functionName, [0], [AttachedPayment(getAssetBytes(t0Str), amount)])
 }
 
+func swapPepe(params: String, t0Str: String, t1Str: String, amount: Int) = {
+  let arr = params.split("-")
+  let (pool_address, functionTag) = (arr[0], arr[1])
+  let swapAddress = Address(pool_address.fromBase58String())
+  if (functionTag == "d") then {
+    invoke(swapAddress, "deposit", [0], [AttachedPayment(getAssetBytes(t0Str), amount)])
+  } else if (functionTag == "w") then {
+    invoke(swapAddress, "withdraw", [t1Str, 0], [AttachedPayment(getAssetBytes(t0Str), amount)])
+  } else if (functionTag == "s") then {
+    invoke(swapAddress, "swap", [t1Str, 0], [AttachedPayment(getAssetBytes(t0Str), amount)])
+  } else {
+    throw("Unknown function tag for pepe swap")
+  }
+}
+
 func swapInternal(i: Invocation, routesStr: String, minToReceive: Int, refKey: String) = {
 
   let shutdown = getBoolean("shutdown").valueOrElse(false)
@@ -119,6 +134,8 @@ func swapInternal(i: Invocation, routesStr: String, minToReceive: Int, refKey: S
         invoke(Address(tsnContract.fromBase58String()), "swap", [t1Str, 0], [AttachedPayment(t0, amount0)])
     } else if (dAppType == "lend") then {
         swapLend(dApp, t0Str, t1Str, amount0)
+    } else if (dAppType == "pepe") then {
+        swapPepe(dApp, t0Str, t1Str, amount0)
     }
       else {
       throw("internal aggregator issue: unknow pool type")
