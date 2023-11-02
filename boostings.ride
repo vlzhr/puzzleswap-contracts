@@ -1,0 +1,147 @@
+{-# STDLIB_VERSION 5 #-}
+{-# SCRIPT_TYPE ACCOUNT #-}
+{-# CONTENT_TYPE DAPP #-}
+
+let li = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33", "34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46", "47", "48", "49", "50", "51", "52", "53", "55", "56"] #, "57", "58", "59", "60", "61", "62", "63", "65", "66", "67", "68", "69", "70", "71", "72", "73", "75", "76", "77", "78", "79", "80", "81", "82", "83", "85", "86", "87", "88"] #, "89", "90", "91", "92", "93", "95", "96", "97", "98", "99", "100"]
+
+#test mode 10 minutes per day
+let hours = 1
+let minutes = 10
+
+#regular mode
+#let hours = 24
+#let minutes = 60
+
+func tryGetInteger (key:String) = match getInteger(this, key) {
+    case b: Int => 
+        b
+    case _ => 
+        0
+}
+
+func tryGetString (key:String) = match getString(this, key) {
+    case b: String => 
+        b
+    case _ => 
+        ""
+}
+
+func getAssetString (assetId:ByteVector|Unit) = match assetId {
+    case b: ByteVector => 
+        toBase58String(b)
+    case _ => 
+        "WAVES"
+}
+
+func getAssetBytes (assetIdStr:String) = if ((assetIdStr == "WAVES"))
+    then unit
+    else fromBase58String(assetIdStr)
+
+func payBoostingResult (boostingId:String) = {
+    let lastHeight = tryGetInteger((("boosting_" + boostingId) + "_lastHeight"))
+    let finishHeight = tryGetInteger((("boosting_" + boostingId) + "_finishHeight"))
+    if (if ((lastHeight != 0))
+        then (finishHeight > lastHeight)
+        else false)
+        then {
+            let blockReward = tryGetInteger((("boosting_" + boostingId) + "_totalAmount")) / ((tryGetInteger(("boosting_" + boostingId) + "_days") * hours * minutes))
+            let toPay = fraction((min([finishHeight, height]) - lastHeight), blockReward, 1)
+            [
+            IntegerEntry((("boosting_" + boostingId) + "_lastHeight"), height), 
+            ScriptTransfer(addressFromStringValue(tryGetString((("boosting_" + boostingId) + "_poolId"))), 
+                toPay, 
+                getAssetBytes(tryGetString((("boosting_" + boostingId) + "_assetId"))))
+            ]
+            }
+        else nil
+    }
+
+func endedBoostingIds (boostingId:String) = {
+    let lastHeight = tryGetInteger((("boosting_" + boostingId) + "_lastHeight"))
+    let finishHeight = tryGetInteger((("boosting_" + boostingId) + "_finishHeight"))
+    if finishHeight <= lastHeight then 
+    [StringEntry((("list ended " + toString(height)) + " boostingIds"), ((tryGetString((("list ended " + toString(height)) + " boostingIds")) + boostingId) + ","))]
+        else nil
+    }
+
+@Callable(i)
+func addBoosting (poolId:String, days:Int) = 
+if (days < 1) then throw("amount of days has to be between 1 and 365") else if (days> 365) then throw("amount of days has to be between 1 and 365") else
+#protected mode, to comment out after succesfull live testing 
+if (i.caller != Address(base58'3P8qVX189qpoTJZQQQdKS9endHK5sxWsvrd')) then throw("under maintenance until further notice") else
+{
+    let fullAmount = i.payments[0].amount
+    if fullAmount / days < 1440 then throw((("boosting amount too small, minimum is " + toString((1440 * days)) + " of the smallest unit of payment asset"))) else
+        let assetId = getAssetString(i.payments[0].assetId)
+        if height == tryGetInteger("height") then throw("wait 1 minute") else
+    strict entry = invoke(this, "entryEnded", [], [])
+    strict get = invoke(this, "firstEndedBoostingId", [], [])
+    let boostingId = toString(tryGetInteger("first"))
+    if ((addressFromString(poolId) == unit))
+        then throw("incorrect pool address")
+        else 
+        [
+        #IntegerEntry("global_boostingsAmount", boostingId), 
+        IntegerEntry((("boosting_" + boostingId) + "_days"), days), 
+        IntegerEntry((("boosting_" + boostingId) + "_totalAmount"), fullAmount), 
+        IntegerEntry((("boosting_" + boostingId) + "_dailyAmount"), (fullAmount / days)), 
+        #IntegerEntry((("boosting_" + boostingId) + "_blockAmount"), (fullAmount / ((days * hours) * minutes))), 
+        IntegerEntry((("boosting_" + boostingId) + "_startHeight"), height), 
+        IntegerEntry((("boosting_" + boostingId) + "_finishHeight"), (height + ((days * hours) * minutes))), 
+        IntegerEntry((("boosting_" + boostingId) + "_finishTimestamp"), (lastBlock.timestamp + ((((days * hours) * minutes) * 60) * 1000))), 
+        IntegerEntry((("boosting_" + boostingId) + "_lastHeight"), height), 
+        StringEntry((("boosting_" + boostingId) + "_assetId"), assetId), 
+        StringEntry((("boosting_" + boostingId) + "_owner"), toString(i.caller)), 
+        StringEntry((("boosting_" + boostingId) + "_poolId"), poolId), 
+        StringEntry((("pool_" + poolId) + "_boostings"), ((tryGetString((("pool_" + poolId) + "_boostings")) + boostingId) + ","))
+        ]
+    }
+
+@Callable(i)
+func payBoosting (boostingId:String) = payBoostingResult(boostingId)
+
+@Callable(i)
+func payBoostings () = {
+    func f (accum:Int, next:String) = {
+        let in = invoke(this, "payBoosting", [next], nil)
+        if ((in == in))
+            then in
+            else throw("Strict value is not equal to itself.")
+        }
+    let payments = { 
+        FOLD<56>(li, 0, f)
+        }
+    if ((payments == payments))
+        then nil
+        else throw("Strict value is not equal to itself.")
+    }
+
+@Callable(i)
+func endedBoostings (boostingId:String) = endedBoostingIds(boostingId)
+
+@Callable(i)
+func entryEnded () = {
+    func f (accum:Int, next:String) = {
+        let in = invoke(this, "endedBoostings", [next], nil)
+        if ((in == in))
+            then in
+            else throw("Strict value is not equal to itself.")
+        }
+    let end = { 
+        FOLD<56>(li, 0, f)
+        }
+    if ((end == end))
+        then [IntegerEntry("height", height)]
+        else throw("Strict value is not equal to itself.")
+    }
+
+@Callable(i)
+func firstEndedBoostingId () = {
+    func fold(accum: List[Int], next: String) = {
+    accum :+ next.parseIntValue()
+    }
+        let StringValue = dropRight(tryGetString(("list ended " + toString(height)) + " boostingIds"), 1)
+        let list = FOLD<56>(StringValue.split(","), [], fold)
+        let firstOfList = getElement(list, 0)
+        [IntegerEntry("first", firstOfList)]
+}
