@@ -2,7 +2,7 @@
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
-let VERSION = "PZ-1.0.3 TEST"
+let VERSION = "PZ-1.0.5 TEST"
 
 # let usdnAssetId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
 # let puzzleAssetId = base58'HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS'
@@ -710,14 +710,109 @@ func transferOwnership(newOwnerAddress: String) = {
 }
 
 @Callable(i)
+func setRebalancingPlan(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: String, stepsAmount: Int, stepsInterval: Int) = {
+  # used by admin to set up rebalancing plan
+  # if new tokens are added to the pool, they need to be attached as a payment to this invoke
+
+  if (i.caller != this) then {throw("this call available only for admin")}
+  else if (getBoolean(this, "rebalance_inProgress").valueOrElse(false)) then {
+    throw("rebalancing in progress")
+  } else {
+    let newAssetWeightsStrLi = assetWeightsStr.split(",")
+    let newAssetIdsStrLi = assetIdsStr.split(",")
+
+    # calculating price change per step for every token
+    func f(accum: List[String], assetIdStr: String) = {
+      let oldWeight = tryGetInteger("global_"+assetIdStr+"_weight")
+      let newWeight = newAssetWeightsStrLi[newAssetIdsStrLi.indexOf(assetIdStr).value()].value().parseIntValue()
+
+      let deltaPerStep = fraction(newWeight - oldWeight, 10000, stepsInterval)
+
+      accum ++ [deltaPerStep.toString()]
+    } 
+    let assetDeltas = FOLD<10>(newAssetIdsStrLi, [], f)
+
+    # is composition changed?
+    let oldAssetIds = getStringValue("static_tokenIds")
+    let newTokensAdded = oldAssetIds != assetIdsStr
+
+    func recordAssetPayment(accum: List[IntegerEntry], next: AttachedPayment) = {
+      accum ++ [IntegerEntry("rebalance_attachedPayment_" + next.assetId.getAssetString(), next.amount)]
+    }
+    let paymentEntries = FOLD<10>(i.payments, [], recordAssetPayment)
+
+    [
+      BooleanEntry("rebalance_inProgress", true),
+      BooleanEntry("rebalance_newTokensAdded", newTokensAdded),
+      IntegerEntry("rebalance_stepsDone", 0),
+      IntegerEntry("rebalance_lastStepHeight", height),
+
+      IntegerEntry("rebalance_stepsAmount", stepsAmount),
+      IntegerEntry("rebalance_stepsInterval", stepsInterval),  # interval between steps in blocks
+      StringEntry("rebalance_assetIds", assetIdsStr),
+      StringEntry("rebalance_newBaseTokenId", baseTokenIdStr), # will only be enacted if new tokens added
+
+      StringEntry("rebalance_assetDeltas", assetDeltas.makeString(","))
+    ] ++ paymentEntries
+  }
+}
+
+@Callable(i)
+func stepRebalancing() = {
+  # can be invoked by anyone once in a stepsInterval blocks
+  # is used to perform the smooth rebalancing
+
+  if (!getBoolean(this, "rebalance_inProgress").valueOrElse(false)) then {
+    throw("no rebalancing in progress")
+  } else {
+    let lastStepHeight = getIntegerValue("rebalance_lastStepHeight")
+    let stepInterval = getIntegerValue("rebalance_stepsInterval")
+    let stepsDone = getIntegerValue("rebalance_stepsDone")
+    let nextStepHeight = lastStepHeight + stepInterval
+
+    if (height < nextStepHeight) then {throw("can't be done yet")}
+    else {
+      let assetDeltas = getStringValue("rebalance_assetDeltas").split(",") # assetDelta is the weight change for every iteration
+
+      let newAssetIdsStr = getStringValue("rebalance_assetIds")
+      let newAssetIds = newAssetIdsStr.split(",")
+      func f(accum: List[String], assetIdStr: String) = {
+        accum ++ [
+          # TO THINK ABOUT: actually this / 10000 division can lead to wrong rounding -> sum will not be equal to 10000
+          (getInteger("global_"+assetIdStr+"_weight").valueOrElse(0) + assetDeltas[newAssetIds.indexOf(assetIdStr).value()].parseIntValue() / 10000).toString()
+        ]
+      }
+      let newShares = FOLD<10>(newAssetIds, [], f)
+
+      let newTokensAdded = getBooleanValue("rebalance_newTokensAdded")
+      strict inv = if (newTokensAdded) then {
+        invoke(this, "doRebalancingWithNewTokens", [newAssetIdsStr, newShares, getStringValue("rebalance_newBaseTokenId")], [])
+      } else {
+        invoke(this, "doRebalancing", [newShares], [])
+      }
+
+      let isFinished = getIntegerValue("rebalance_stepsAmount") >= (stepsDone + 1)
+
+      [      
+        BooleanEntry("rebalance_inProgress", !isFinished),
+        IntegerEntry("rebalance_stepsDone", stepsDone + 1),
+        IntegerEntry("rebalance_lastStepHeight", height)
+      ]
+    }
+  }
+}
+
+@Callable(i)
 func doRebalancing(assetWeightsStr: String) = {  
+  # is supposed to be invoked by stepRebalancing every time it's used
+
   let assetWeightsStrLi = assetWeightsStr.split(",")
   let assetWeightsSum = FOLD<10>(assetWeightsStrLi, 0, sum)
 
   let assetIdsStrLi = tryGetString("static_tokenIds").split(",")    
 
   if (i.caller != this) then {throw("this call available only for admin")}
-  else if (assetWeightsSum != 10000) then {throw("sum of token weights must be equal to 10000")}
+  # else if (assetWeightsSum != 10000) then {throw("sum of token weights must be equal to 10000")}
   else {
     # getting oldKMult from state
     let oldKMult = getKMult()
@@ -755,9 +850,10 @@ func doRebalancing(assetWeightsStr: String) = {
 
 @Callable(i)
 func doRebalancingWithNewTokens(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: String) = {  
+  # used only once by stepRebalancing function - at step 0
+
   let newAssetWeightsStrLi = assetWeightsStr.split(",")
   let assetWeightsSum = FOLD<10>(newAssetWeightsStrLi, 0, sum)
-  let pmt = i.payments
 
   let prevAssetIdsStrLi = tryGetString("static_tokenIds").split(",")
   let newAssetIdsStrLi = assetIdsStr.split(",")
@@ -767,12 +863,14 @@ func doRebalancingWithNewTokens(assetIdsStr: String, assetWeightsStr: String, ba
   func findStrInLi(accum: List[String], next: String) = {if newAssetIdsStrLi.indexOf(next) != unit then accum ++ [next] else accum}
   let deprecatedAssets = FOLD<10>(prevAssetIdsStrLi, [], findStrInLi)
 
-  func findAssetPayment(current: (Int, ByteVector|Unit), next: AttachedPayment) = {if next.assetId == current._2 then (next.amount, current._2) else {current}}
-  func addAssetBalanceToLi(li: List[Int], assetId: ByteVector|Unit) = {li ++ [(FOLD<10>(pmt, (0, assetId), findAssetPayment))._1]}
+  func findAssetPayment(assetId: ByteVector|Unit) = {
+    getInteger("rebalance_attachedPayment_"+assetId.getAssetString()).valueOrElse(0)
+  }
+  func addAssetBalanceToLi(li: List[Int], assetId: ByteVector|Unit) = {li ++ [findAssetPayment(assetId)]}
   let attachedBalances = FOLD<10>(newAssetIds, [], addAssetBalanceToLi)
 
   if (i.caller != addressFromStringValue(tryGetString("static_poolOwner"))) then {throw("this call available only for admin")}
-  else if (assetWeightsSum != 10000) then {throw("sum of token weights must be equal to 10000")}
+  # else if (assetWeightsSum != 10000) then {throw("sum of token weights must be equal to 10000")}
   else if (feeAssetStr == "") then {throw("pool must have one of the supported fee assets in the composition")}
   else if (newAssetIdsStrLi.indexOf(baseTokenIdStr) == unit) then {throw("base token has to be included in the composition")}
   else {
