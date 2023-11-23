@@ -715,7 +715,7 @@ func setRebalancingPlan(assetIdsStr: String, assetWeightsStr: String, baseTokenI
   # used by admin to set up rebalancing plan
   # if new tokens are added to the pool, they need to be attached as a payment to this invoke
 
-  if (i.caller != this) then {throw("this call available only for admin")}
+  if ((i.caller != this) && (i.caller != addressFromStringValue(tryGetString("static_poolOwner")))) then {throw("this call available only for admin")}
   else if (getBoolean(this, "rebalance_inProgress").valueOrElse(false)) then {
     throw("rebalancing in progress")
   } else {
@@ -870,7 +870,7 @@ func doRebalancingWithNewTokens(assetIdsStr: String, assetWeightsStr: String, ba
   func addAssetBalanceToLi(li: List[Int], assetId: ByteVector|Unit) = {li ++ [findAssetPayment(assetId)]}
   let attachedBalances = FOLD<10>(newAssetIds, [], addAssetBalanceToLi)
 
-  if (i.caller != addressFromStringValue(tryGetString("static_poolOwner"))) then {throw("this call available only for admin")}
+  if (i.caller != this && i.caller != addressFromStringValue(tryGetString("static_poolOwner"))) then {throw("this call available only for admin")}
   # else if (assetWeightsSum != 10000) then {throw("sum of token weights must be equal to 10000")}
   else if (feeAssetStr == "") then {throw("pool must have one of the supported fee assets in the composition")}
   else if (newAssetIdsStrLi.indexOf(baseTokenIdStr) == unit) then {throw("base token has to be included in the composition")}
