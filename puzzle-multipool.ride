@@ -504,7 +504,8 @@ func reset() = {
   [
     IntegerEntry("global_poolToken_amount", 200000000),
     IntegerEntry("global_WAVES_balance", 400000000),
-    IntegerEntry("global_HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS_balance", 100000000)
+    IntegerEntry("global_HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS_balance", 100000000),
+    BooleanEntry("rebalance_inProgress", false)
   ]
 }
 
@@ -723,10 +724,10 @@ func setRebalancingPlan(assetIdsStr: String, assetWeightsStr: String, baseTokenI
 
     # calculating price change per step for every token
     func f(accum: List[String], assetIdStr: String) = {
-      let oldWeight = tryGetInteger("global_"+assetIdStr+"_weight")
+      let oldWeight = tryGetInteger("static_"+assetIdStr+"_weight")
       let newWeight = newAssetWeightsStrLi[newAssetIdsStrLi.indexOf(assetIdStr).value()].value().parseIntValue()
 
-      let deltaPerStep = fraction(newWeight - oldWeight, 10000, stepsInterval)
+      let deltaPerStep = fraction(newWeight - oldWeight, 10000, stepsAmount)
 
       accum ++ [deltaPerStep.toString()]
     } 
@@ -779,19 +780,19 @@ func stepRebalancing() = {
       func f(accum: List[String], assetIdStr: String) = {
         accum ++ [
           # TO THINK ABOUT: actually this / 10000 division can lead to wrong rounding -> sum will not be equal to 10000
-          (getInteger("global_"+assetIdStr+"_weight").valueOrElse(0) + assetDeltas[newAssetIds.indexOf(assetIdStr).value()].parseIntValue() / 10000).toString()
+          (getInteger("static_"+assetIdStr+"_weight").valueOrElse(0) + assetDeltas[newAssetIds.indexOf(assetIdStr).value()].parseIntValue() / 10000).toString()
         ]
       }
-      let newShares = FOLD<10>(newAssetIds, [], f)
+      let newShares = makeString(FOLD<10>(newAssetIds, [], f), ",")
 
       let newTokensAdded = getBooleanValue("rebalance_newTokensAdded")
-      strict inv = if (newTokensAdded) then {
+      strict inv = if (newTokensAdded && stepsDone == 0) then {
         invoke(this, "doRebalancingWithNewTokens", [newAssetIdsStr, newShares, getStringValue("rebalance_newBaseTokenId")], [])
       } else {
         invoke(this, "doRebalancing", [newShares], [])
       }
 
-      let isFinished = getIntegerValue("rebalance_stepsAmount") >= (stepsDone + 1)
+      let isFinished = (stepsDone + 1) >= getIntegerValue("rebalance_stepsAmount")
 
       [      
         BooleanEntry("rebalance_inProgress", !isFinished),
