@@ -2,26 +2,25 @@
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
-let VERSION = "PZ-1.0.5 TEST"
+let VERSION = "PZ-1.0.6 TEST"
 
-# let usdnAssetId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
-# let puzzleAssetId = base58'HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS'
-# let usdtAssetId = base58'34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ'
-# let usdtPptAssetId = base58'9wc3LXNA4TEBsXyKtoLE9mrbDD7WMHXvXrCjZvabLAsi'
-
-# let usdnAssetIdStr = "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p"
-# let puzzleAssetIdStr = "HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS"
-# let usdtAssetIdStr = "34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ"
-# let usdtPptAssetIdStr = "9wc3LXNA4TEBsXyKtoLE9mrbDD7WMHXvXrCjZvabLAsi"
-
-# let supportedFeeAssetsStr = [
-#   "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p",
-#   "HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS",
-#   "34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ",
-#   "9wc3LXNA4TEBsXyKtoLE9mrbDD7WMHXvXrCjZvabLAsi"
-# ]
+## CONSTANTS ##
+let AssetsWeightsDecimals = 4
+let Scale = 10000
+let Scale8 = 100000000
+let Scale16 = 10000000000000000
+let FeeScale = 10000
+let PoolTokenDecimals = 8 # if (T > 4) then {8} else {T + 2}
+let PoolTokenScale = pow(10, 0, PoolTokenDecimals, 0, 0, HALFUP)
+# !!! rebalance constants 
+# TODO move to external contract's data storage
+let MIN_STEPS_AMOUNT = 1
+let MAX_STEPS_AMOUNT = 500
+let MIN_STEPS_INTERVAL = 1
+let MAX_STEPS_INTERVAL = 10000
 
 
+## HELPER METHODS ##
 func tryGetInteger(key: String) = {
   match getInteger(this, key) {
       case b:Int => b
@@ -61,6 +60,23 @@ func getAssetBytes(assetIdStr: String) = {
   if (assetIdStr == "WAVES") then {unit} else {assetIdStr.fromBase58String()}
 }
 
+func getTokenBalance(assetId: ByteVector|Unit) = {
+  match (assetId) {
+      case t:ByteVector => assetBalance(this, t)
+      case _ => wavesBalance(this).available
+    }
+}
+
+func addAssetBytesToList(accum: List[ByteVector|Unit], item: String) = { accum ++ [item.getAssetBytes()] }
+func addAssetWeightToList(accum: List[Int], item: ByteVector|Unit) = { accum ++ [tryGetInteger("static_" + item.getAssetString() + "_weight")] }
+func addAssetWeightToStrList(accum: List[String], item: String) = { accum ++ [tryGetInteger("static_" + item + "_weight").toString()] }
+func addAssetDecimalsToList(accum: List[Int], item: ByteVector|Unit) = { accum ++ [tryGetInteger("static_" + item.getAssetString() + "_decimals")] }
+func addAssetScaleToList(accum: List[Int], item: ByteVector|Unit) = { accum ++ [tryGetInteger("static_" + item.getAssetString() + "_scale")] }
+func addIntToList(accum: List[Int], item: String) = { accum ++ [item.parseIntValue()] }
+
+
+## CONFIG ##
+# TODO move to external contract's data storage
 let usdnAssetIdStr = tryGetStringOrThrow("usdnAssetId")
 let puzzleAssetIdStr = tryGetStringOrThrow("puzzleAssetId")
 let usdtAssetIdStr = tryGetStringOrThrow("usdtAssetId")
@@ -86,31 +102,18 @@ let oracleAddress = Address(fromBase58String(tryGetStringOrThrow("oracleAddress"
 let stakingAddress = Address(fromBase58String(tryGetStringOrThrow("stakingAddress")))
 let feesAddress = Address(fromBase58String(tryGetStringOrThrow("feesAddress")))
 
-func addAssetBytesToList(accum: List[ByteVector|Unit], item: String) = { accum ++ [item.getAssetBytes()] }
-func addAssetWeightToList(accum: List[Int], item: ByteVector|Unit) = { accum ++ [tryGetInteger("static_" + item.getAssetString() + "_weight")] }
-func addAssetDecimalsToList(accum: List[Int], item: ByteVector|Unit) = { accum ++ [tryGetInteger("static_" + item.getAssetString() + "_decimals")] }
-func addAssetScaleToList(accum: List[Int], item: ByteVector|Unit) = { accum ++ [tryGetInteger("static_" + item.getAssetString() + "_scale")] }
-func addIntToList(accum: List[Int], item: String) = { accum ++ [item.parseIntValue()] }
 
+## GLOBAL VARIABLES ##
 let T = tryGetInteger("static_tokensAmount")
 let assetIds = FOLD<10>(tryGetString("static_tokenIds").split(","), [], addAssetBytesToList)
 let AssetsWeights = FOLD<10>(assetIds, [], addAssetWeightToList)
 let Decimals = FOLD<10>(assetIds, [], addAssetDecimalsToList)
 let Scales = FOLD<10>(assetIds, [], addAssetScaleToList)
-
 let Fee = tryGetInteger("static_fee")
-
-let AssetsWeightsDecimals = 4
-let Scale = 10000
-let Scale8 = 100000000
-let Scale16 = 10000000000000000
-let FeeScale = 10000
-
-let PoolTokenDecimals = 8 # if (T > 4) then {8} else {T + 2}
-let PoolTokenScale = pow(10, 0, PoolTokenDecimals, 0, 0, HALFUP)
-
 let earnedAssets = assetIds
 
+
+## UTIL METHODS ##
 func debug(msg: String) = {
   if (true) then {
     throw(msg)
@@ -142,6 +145,14 @@ func getKMult() = {
     case x: Int => x
     case _ => Scale16
   }
+}
+
+func saveCurrentWeights() = {
+  let assetIdsLi = tryGetString("static_tokenIds").split(",")
+  func s(accum: List[IntegerEntry], assetId: String) = {
+    accum ++ [IntegerEntry("weight_start_" + assetId, tryGetInteger("static_" + assetId + "_weight"))]
+  }
+  FOLD<10>(assetIdsLi, [], s)
 }
 
 func getVirtualPoolTokenAmount() = {fraction(tryGetInteger("global_poolToken_amount"), getKMult(), Scale16)}
@@ -209,14 +220,12 @@ func calculateUsdnValue(assetId: ByteVector|Unit, amount: Int, aBalance: Int, gi
   }
 }
 
-
 func getPriceFromOracle(assetIdStr: String) = {
   match getInteger(oracleAddress, assetIdStr+"_twap5B") {
     case x: Int => x
     case _ => 0
   }
 }
-
 
 func calculateUsdValue(assetId: ByteVector|Unit, amount: Int, aBalance: Int) = {
 
@@ -234,7 +243,6 @@ func calculateUsdValue(assetId: ByteVector|Unit, amount: Int, aBalance: Int) = {
   fraction( valInFeeAsset, feeAssetPrice, feeAssetScale )
 
 }
-
 
 func checkTokensValidity(payments: List[AttachedPayment]) = {
   func handler1(accum: List[ByteVector], payment: AttachedPayment) = {
@@ -263,12 +271,10 @@ func handlePoolTokensAdd(PIssued: Int, payments: List[AttachedPayment], userAddr
     let a1 = fraction((PSupply + PIssued).toBigInt()*Scale8.toBigInt(), tokenDecimals.toBigInt(), PSupply.toBigInt(), CEILING)
     let Dk = fraction(a1 - tokenDecimals.toBigInt()*Scale8.toBigInt(), Bk.toBigInt(), tokenDecimals.toBigInt()*Scale8.toBigInt(), CEILING).toInt()  # deposited amount of token K
 
-# if (true) then {
-#   throw(getAssetString(tokenId) + ", Dk: " + Dk.toString())
-# } else []
+
 
     let paymentAmount = getTokenPaymentAmount(tokenId)
-    let toReturn = (if (paymentAmount != 0) then {paymentAmount} else {0}) - Dk
+    let toReturn = (if (paymentAmount != 0) then {paymentAmount} else {0}) - Dk # ???
 
     let t = if (needChange && toReturn > 0) then {[ScriptTransfer(userAddress, toReturn, tokenId)]} else {[]}
     accum ++ t ++ [
@@ -288,15 +294,6 @@ func handlePoolTokensRedeem(PRedeemed: Int, userAddress: Address) = {
     let psuppl = fraction(((PSupply - PRedeemed).toBigInt()*Scale8.toBigInt()), Scale8.toBigInt(), PSupply.toBigInt(), DOWN)
     let amount = fraction(
       (Scale16.toBigInt() - psuppl), Bk.toBigInt(), Scale16.toBigInt(), CEILING).toInt()
-    
-    # if (true) then {
-    #   throw("amount: " + amount.toString() + ", Psupply - Predeemed: " + (PSupply - PRedeemed).toString() + ", tokenBal: " + Bk.toString() + ", PSupply: " + PSupply.toString() + ", PRedeemed: " + PRedeemed.toString() + ", psuppl: " + psuppl.toString())
-    # } else {
-    #   accum ++ [
-    #   IntegerEntry("global_"+tokenId.getAssetString()+"_balance", Bk-amount),
-    #   ScriptTransfer(userAddress, amount, tokenId)
-    # ]
-    # }
 
     accum ++ [
       IntegerEntry("global_"+tokenId.getAssetString()+"_balance", Bk-amount),
@@ -307,11 +304,10 @@ func handlePoolTokensRedeem(PRedeemed: Int, userAddress: Address) = {
   FOLD<10>(assetIds, [], handleTokenRedeem)
 }
 
-
 func calculateOutAmount(AmountIn: Int, assetIn: ByteVector|Unit, assetOut: ByteVector|Unit, BalanceIn: Int, BalanceOut: Int) = {
   let IndexIn = assetIds.indexOf(assetIn).value()
   let IndexOut = assetIds.indexOf(assetOut).value()
-  if (IndexIn == IndexOut) then { AmountIn } 
+  if (IndexIn == IndexOut) then { AmountIn } # ???
   else {
     fraction( BalanceOut, 
               Scale8 * Scale8 - 
@@ -324,14 +320,6 @@ func calculateOutAmount(AmountIn: Int, assetIn: ByteVector|Unit, assetOut: ByteV
                     CEILING).toInt()    
               , Scale8 * Scale8, HALFEVEN)   
   }
-}
-
-
-func getTokenBalance(assetId: ByteVector|Unit) = {
-  match (assetId) {
-      case t:ByteVector => assetBalance(this, t)
-      case _ => wavesBalance(this).available
-    }
 }
 
 func calculateCurrentAssetInterest(assetId: ByteVector|Unit, assetIdStr: String, aBalance: Int, tokenEarningsLastCheck: Int) = {
@@ -387,6 +375,73 @@ func indexStakeResult(addressStr: String, amount: Int) = {
 func sum(accum: Int, n: String) = {accum + n.parseIntValue()}
 func checkFeeAsset(accum: String, next: String) = { if (supportedFeeAssetsStr.indexOf(next) != unit && accum == "") then {next} else {accum} }
 
+# !!! get union of old and new assets
+func getTmpRebalanceIds(newAssetIdsLi: List[String]) = {
+    let currentAssetIdsLi = tryGetString("static_tokenIds").split(",")
+    let result = newAssetIdsLi
+    func f(accum: List[String], assetId: String) = {
+        if (result.indexOf(assetId) == unit) then {
+            accum ++ [assetId]
+        } else {
+            accum
+        }
+    }
+    FOLD<10>(currentAssetIdsLi, result, f)
+}
+
+# !!! returns value > 0 if there are any changes between old assets and new (ignoring reordering)
+func checkTokensChange(newAssetIdsLi: List[String]) = {
+    let currentAssetIdsLi = tryGetString("static_tokenIds").split(",")
+    func rem(accum: Int, assetId: String) = {
+      if (newAssetIdsLi.indexOf(assetId) == unit) then {
+        accum + 1
+      } else {
+        accum
+      }
+    }
+        
+    func add(accum: Int, assetId: String) = {
+      if {currentAssetIdsLi.indexOf(assetId) == unit} then {
+        accum + 1
+      } else {
+        accum
+      }
+    }
+        
+    let removed = FOLD<10>(currentAssetIdsLi, 0, rem)
+    let added = FOLD<10>(newAssetIdsLi, 0, add)
+    removed + added
+}
+
+# check payments for setRebalancePlan
+func validatePayments(assetsList: List[String], payments: List[AttachedPayment]) = {
+  # extract payment ids and check payment amount
+  func getPaymentAssets(accum: List[String], next: AttachedPayment) = {
+        if (next.amount <= 0) then {throw("Too low payment amount for " + next.assetId.getAssetString() + ": " + next.amount.toString())}
+        else {
+          accum ++ [next.assetId.getAssetString()]
+        }
+      }
+  let paymentList = FOLD<10>(payments, [], getPaymentAssets)
+
+  # check if wrong asset in payments
+  func f1(accum: Int, next: String) = {
+    if (assetsList.indexOf(next) == unit) then {throw(next + " asset is present in payments, but is not in new assets: " + makeString(assetsList, ","))}
+    else accum
+  }
+
+  # check if asset is missing in payments
+  func f2(accum: Int, next: String) = {
+    if (paymentList.indexOf(next) == unit) then {throw(next + " asset is present in new assets, but is not in payments: " + makeString(paymentList, ","))}
+    else accum
+  }
+
+  let a1 = FOLD<10>(paymentList, 1, f1)
+  let a2 = FOLD<10>(assetsList, 1, f2)
+  a1 + a2
+}
+
+## CALLABLE METHODS ##
 @Callable(i)
 func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: String, poolDomain: String, poolOwner: String, fee: Int) = {
   let poolOwnerAddress = Address(poolOwner.fromBase58String())
@@ -609,7 +664,7 @@ func swap(assetOut: String, minimum: Int) = {
   let scaleIn = Scale8 / tryGetInteger("static_" + assetIn + "_scale")
   let scaleOut = Scale8 / tryGetInteger("static_" + assetOut + "_scale")
   let feeAssetOutStr = tryGetString("static_feeToken")
-  let feeAssetOut = if (feeAssetOutStr == "") then {usdnAssetId} else {feeAssetOutStr.getAssetBytes()}
+  let feeAssetOut = if (feeAssetOutStr == "") then {usdnAssetId} else {feeAssetOutStr.getAssetBytes()} # ???
   
   # markup all asset numbers
   let AssetInBalance = tryGetInteger("global_"+AssetIn.getAssetString()+"_balance")
@@ -625,12 +680,6 @@ func swap(assetOut: String, minimum: Int) = {
   let AmountOut = fraction(AmountOut1, 1, scaleOut)
   let AssetOutBalance2 = AssetOutBalance - AmountOut
   let AssetInBalance2 = AssetInBalance + cleanAmountIn
-  
-  # if (true) then {
-  #   throw("out: " + AmountOut.toString() + ", balance: " + AssetOutBalance.toString())
-  # } else {
-  #   []
-  # }
 
   let feeAssetOutBalance = 
                             if (feeAssetOut == AssetIn) then {AssetInBalance2} 
@@ -702,6 +751,59 @@ func swap(assetOut: String, minimum: Int) = {
 }
 
 @Callable(i)
+func swapReadOnly(assetIn: String, assetOut: String, AmountIn: Int) = {
+  # throw("stop")
+  # markup all assets
+  
+  let AssetIn = getAssetBytes(assetIn)
+  let AssetOut = assetOut.getAssetBytes()
+  # let assetIn = getAssetString(AssetIn)
+  let scaleIn = Scale8 / tryGetInteger("static_" + assetIn + "_scale")
+  let scaleOut = Scale8 / tryGetInteger("static_" + assetOut + "_scale")
+  let feeAssetOutStr = tryGetString("static_feeToken")
+  let feeAssetOut = if (feeAssetOutStr == "") then {usdnAssetId} else {feeAssetOutStr.getAssetBytes()}
+  
+  # markup all asset numbers
+  let AssetInBalance = tryGetInteger("global_"+AssetIn.getAssetString()+"_balance")
+  let AssetOutBalance = tryGetInteger("global_"+assetOut+"_balance")
+  let AssetInBalanceScaled = AssetInBalance * scaleIn
+  let AssetOutBalanceScaled = AssetOutBalance * scaleOut
+  let feeAmountIn = fraction(AmountIn, Fee, FeeScale)
+  let cleanAmountIn = (AmountIn - feeAmountIn)
+  let cleanAmountInScaled = cleanAmountIn * scaleIn
+
+  # calculate "out" numbers
+  let AmountOut1 = calculateOutAmount(cleanAmountInScaled, AssetIn, AssetOut, AssetInBalanceScaled, AssetOutBalanceScaled)
+  let AmountOut = fraction(AmountOut1, 1, scaleOut)
+  let AssetOutBalance2 = AssetOutBalance - AmountOut
+  let AssetInBalance2 = AssetInBalance + cleanAmountIn
+
+  let feeAssetOutBalance = 
+                            if (feeAssetOut == AssetIn) then {AssetInBalance2} 
+                            else if (feeAssetOut == AssetOut) then {AssetOutBalance2} 
+                            else {tryGetInteger("global_"+feeAssetOut.getAssetString()+"_balance")}
+    
+  let feeAmountOut = calculateOutAmount(feeAmountIn, AssetIn, feeAssetOut, AssetInBalance, feeAssetOutBalance)
+
+  # do all the verifications
+  # TODO: verification that realPrice <= marketPrice (just in case)
+  if (AssetOut == AssetIn) then {
+    throw("this swap is not allowed")
+  }
+  else if (AssetOutBalance - AmountOut < 0) then {
+    throw("contract is out of reserves")
+  }
+  else if (isShutdown()) then {
+    throw("contract is on stop")
+  }
+  else {
+    (
+      [], AmountOut
+    )
+  }
+}
+
+@Callable(i)
 func transferOwnership(newOwnerAddress: String) = {
   if (i.caller.toString() != tryGetString("static_poolOwner")) then {throw("this call available only for pool owner")}
   else {
@@ -714,46 +816,77 @@ func setRebalancingPlan(assetIdsStr: String, assetWeightsStr: String, baseTokenI
   # used by admin to set up rebalancing plan
   # if new tokens are added to the pool, they need to be attached as a payment to this invoke
 
-  if ((i.caller != this) && (i.caller != addressFromStringValue(tryGetString("static_poolOwner")))) then {throw("this call available only for admin")}
+  if (i.caller != addressFromStringValue(tryGetString("static_poolOwner"))) then {throw("this call available only for pool owner")}
   else if (getBoolean(this, "rebalance_inProgress").valueOrElse(false)) then {
     throw("rebalancing in progress")
   } else {
     let newAssetWeightsStrLi = assetWeightsStr.split(",")
     let newAssetIdsStrLi = assetIdsStr.split(",")
-
-    # calculating price change per step for every token
-    func f(accum: List[String], assetIdStr: String) = {
-      let oldWeight = tryGetInteger("static_"+assetIdStr+"_weight")
-      let newWeight = newAssetWeightsStrLi[newAssetIdsStrLi.indexOf(assetIdStr).value()].value().parseIntValue()
-
-      let deltaPerStep = fraction(newWeight - oldWeight, 10000, stepsAmount)
-
-      accum ++ [deltaPerStep.toString()]
-    } 
-    let assetDeltas = FOLD<10>(newAssetIdsStrLi, [], f)
-
-    # is composition changed?
+    let feeAssetStr = FOLD<10>(newAssetIdsStrLi, "", checkFeeAsset)
+    let assetWeightsSum = FOLD<10>(newAssetWeightsStrLi, 0, sum)
     let oldAssetIds = getStringValue("static_tokenIds")
-    let newTokensAdded = oldAssetIds != assetIdsStr
+    let oldAssetIdsLi = oldAssetIds.split(",")
 
-    func recordAssetPayment(accum: List[IntegerEntry], next: AttachedPayment) = {
-      accum ++ [IntegerEntry("rebalance_attachedPayment_" + next.assetId.getAssetString(), next.amount)]
+    func findAdded(accum: List[String], next: String) = {
+        if (oldAssetIdsLi.indexOf(next) == unit) then accum ++ [next] else accum
+      }
+
+    func findRemoved(accum: List[String], next: String) = {
+      if (newAssetIdsStrLi.indexOf(next) == unit) then accum ++ [next] else accum
     }
-    let paymentEntries = FOLD<10>(i.payments, [], recordAssetPayment)
 
-    [
-      BooleanEntry("rebalance_inProgress", true),
-      BooleanEntry("rebalance_newTokensAdded", newTokensAdded),
-      IntegerEntry("rebalance_stepsDone", 0),
-      IntegerEntry("rebalance_lastStepHeight", height),
+    # !!! get changes in assets
+    let addedAssets = FOLD<10>(newAssetIdsStrLi, [], findAdded)
+    let removedAssets = FOLD<10>(oldAssetIdsLi, [], findRemoved)
+    let validPayments = validatePayments(addedAssets, i.payments)
+    # validate arguments:
+    if (newAssetIdsStrLi.size() != newAssetWeightsStrLi.size()) then {throw("assetIds and assetWeights should have same length")}
+    else if (feeAssetStr == "") then {throw("pool must have one of the supported fee assets in the composition")}
+    else if (newAssetIdsStrLi.indexOf(baseTokenIdStr) == unit) then {throw("baseTokenId should be present in assetIds")}
+    else if (stepsAmount < MIN_STEPS_AMOUNT || stepsAmount > MAX_STEPS_AMOUNT) then {throw("Steps amount should be between " + MIN_STEPS_AMOUNT.toString() + " and " + MAX_STEPS_AMOUNT.toString())} 
+    else if (stepsInterval < MIN_STEPS_INTERVAL || stepsInterval > MAX_STEPS_INTERVAL) then {throw("Steps interval should be between " + MIN_STEPS_INTERVAL.toString() + " and " + MAX_STEPS_INTERVAL.toString())} 
+    else if (assetWeightsSum != 10000) then {throw("sum of token weights must be equal to 10000")}
+    else {
+      # calculating price change per step for every token
+      func f(accum: List[String], assetIdStr: String) = {
+        let oldWeight = tryGetInteger("static_"+assetIdStr+"_weight")
+        let newWeight = if (newAssetIdsStrLi.indexOf(assetIdStr) == unit) then 0 else newAssetWeightsStrLi[newAssetIdsStrLi.indexOf(assetIdStr).value()].value().parseIntValue()
+        let deltaPerStep = fraction(newWeight - oldWeight, 10000, stepsAmount)
+        accum ++ [deltaPerStep.toString()]
+      } 
 
-      IntegerEntry("rebalance_stepsAmount", stepsAmount),
-      IntegerEntry("rebalance_stepsInterval", stepsInterval),  # interval between steps in blocks
-      StringEntry("rebalance_assetIds", assetIdsStr),
-      StringEntry("rebalance_newBaseTokenId", baseTokenIdStr), # will only be enacted if new tokens added
+      # !!! use union of old and new assets to have delta both for added and removed tokens
+      let tmpAssetIdsLi = getTmpRebalanceIds(newAssetIdsStrLi) 
+      let assetDeltas = FOLD<10>(tmpAssetIdsLi, [], f)
 
-      StringEntry("rebalance_assetDeltas", assetDeltas.makeString(","))
-    ] ++ paymentEntries
+      
+
+      # is composition changed?
+      
+      let newTokensAdded = checkTokensChange(newAssetIdsStrLi) > 0 # !!! compare lists items instead of comparing strings, may be better
+
+      func recordAssetPayment(accum: List[IntegerEntry], next: AttachedPayment) = {
+        accum ++ [IntegerEntry("rebalance_attachedPayment_" + next.assetId.getAssetString(), next.amount)]
+      }
+      let paymentEntries = FOLD<10>(i.payments, [], recordAssetPayment)
+      let storeWeights = saveCurrentWeights() # !!! save start weights to remove deltas rounding error accumulation
+      [
+        StringEntry("rebalance_addedAssets", makeString(addedAssets, ",")),
+        StringEntry("rebalance_removedAssets", makeString(removedAssets, ",")),
+        StringEntry("tmp_rebalanceAssetIds", makeString(tmpAssetIdsLi, ",")),
+        BooleanEntry("rebalance_inProgress", true),
+        BooleanEntry("rebalance_newTokensAdded", newTokensAdded),
+        IntegerEntry("rebalance_stepsDone", 0),
+        IntegerEntry("rebalance_lastStepHeight", height),
+
+        IntegerEntry("rebalance_stepsAmount", stepsAmount),
+        IntegerEntry("rebalance_stepsInterval", stepsInterval),  # interval between steps in blocks
+        StringEntry("rebalance_assetIds", assetIdsStr),
+        StringEntry("rebalance_newBaseTokenId", baseTokenIdStr), # will only be enacted if new tokens added
+
+        StringEntry("rebalance_assetDeltas", assetDeltas.makeString(","))
+      ] ++ paymentEntries ++ storeWeights
+    }
   }
 }
 
@@ -774,16 +907,16 @@ func stepRebalancing() = {
     else {
       let assetDeltas = getStringValue("rebalance_assetDeltas").split(",") # assetDelta is the weight change for every iteration
 
-      let newAssetIdsStr = getStringValue("rebalance_assetIds")
+      let newAssetIdsStr = getStringValue("tmp_rebalanceAssetIds")
       let newAssetIds = newAssetIdsStr.split(",")
+
       func f(accum: List[String], assetIdStr: String) = {
         accum ++ [
-          # TO THINK ABOUT: actually this / 10000 division can lead to wrong rounding -> sum will not be equal to 10000
-          (getInteger("static_"+assetIdStr+"_weight").valueOrElse(0) + assetDeltas[newAssetIds.indexOf(assetIdStr).value()].parseIntValue() / 10000).toString()
+          # !!! adding delta * stepsDone to initial weight to eliminate rounding error accumulation
+          fraction((getInteger("weight_start_"+assetIdStr).valueOrElse(0)*10000 + assetDeltas[newAssetIds.indexOf(assetIdStr).value()].parseIntValue() * (stepsDone + 1)), 1, 10000, HALFUP).toString()
         ]
       }
       let newShares = makeString(FOLD<10>(newAssetIds, [], f), ",")
-
       let newTokensAdded = getBooleanValue("rebalance_newTokensAdded")
       strict inv = if (newTokensAdded && stepsDone == 0) then {
         invoke(this, "doRebalancingWithNewTokens", [newAssetIdsStr, newShares, getStringValue("rebalance_newBaseTokenId")], [])
@@ -793,11 +926,37 @@ func stepRebalancing() = {
 
       let isFinished = (stepsDone + 1) >= getIntegerValue("rebalance_stepsAmount")
 
-      [      
+      # base actions
+      let actions =  [      
         BooleanEntry("rebalance_inProgress", !isFinished),
         IntegerEntry("rebalance_stepsDone", stepsDone + 1),
         IntegerEntry("rebalance_lastStepHeight", height)
       ]
+
+      if (stepsDone == 0) then { # !!! rewrite ids with union of old and new assets 
+        actions ++ [StringEntry("static_tokenIds", newAssetIdsStr)]
+      } else if (isFinished) then {
+        # !!! at last step remove data for removed assets and write static_tokenIds, static_tokensAmount, static_tokenWeights with final variant
+        let removedAssetsLi = tryGetString("rebalance_removedAssets").split(",")
+        func rmData(accum: List[DeleteEntry], assetId: String) = {
+          accum ++ [
+            DeleteEntry("static_" + assetId + "_scale"),
+            DeleteEntry("static_" + assetId + "_decimals"),
+            DeleteEntry("static_" + assetId + "_weight"),
+            DeleteEntry("static_" + assetId + "_balance")
+          ]
+        }
+        let rm = FOLD<10>(removedAssetsLi, [], rmData)
+        let finalAssetsIdsStr = tryGetString("rebalance_assetIds")
+        let AssetsWeightsStr = FOLD<10>(finalAssetsIdsStr.split(","), [], addAssetWeightToStrList)
+        actions ++ rm ++ [
+          StringEntry("static_tokenIds", finalAssetsIdsStr),
+          StringEntry("static_tokenWeights", makeString(AssetsWeightsStr, ",")),
+          IntegerEntry("static_tokensAmount", finalAssetsIdsStr.split(",").size())
+        ]
+      } else {
+        actions
+      }
     }
   }
 }
@@ -808,11 +967,8 @@ func doRebalancing(assetWeightsStr: String) = {
 
   let assetWeightsStrLi = assetWeightsStr.split(",")
   let assetWeightsSum = FOLD<10>(assetWeightsStrLi, 0, sum)
-
   let assetIdsStrLi = tryGetString("static_tokenIds").split(",")    
-
   if (i.caller != this) then {throw("this call available only for admin")}
-  # else if (assetWeightsSum != 10000) then {throw("sum of token weights must be equal to 10000")}
   else {
     # getting oldKMult from state
     let oldKMult = getKMult()
@@ -853,26 +1009,20 @@ func doRebalancingWithNewTokens(assetIdsStr: String, assetWeightsStr: String, ba
   # used only once by stepRebalancing function - at step 0
 
   let newAssetWeightsStrLi = assetWeightsStr.split(",")
-  let assetWeightsSum = FOLD<10>(newAssetWeightsStrLi, 0, sum)
-
   let prevAssetIdsStrLi = tryGetString("static_tokenIds").split(",")
   let newAssetIdsStrLi = assetIdsStr.split(",")
   let newAssetIds = FOLD<10>(newAssetIdsStrLi, [], addAssetBytesToList)
   let feeAssetStr = FOLD<10>(newAssetIdsStrLi, "", checkFeeAsset) 
 
-  func findStrInLi(accum: List[String], next: String) = {if newAssetIdsStrLi.indexOf(next) != unit then accum ++ [next] else accum}
-  let deprecatedAssets = FOLD<10>(prevAssetIdsStrLi, [], findStrInLi)
+  let addedAssets = tryGetString("rebalance_addedAssets").split(",")
 
-  func findAssetPayment(assetId: ByteVector|Unit) = {
+  func findAssetPayment(assetId: ByteVector|Unit) = { # ??? if there are previous rebalances entries?
     getInteger("rebalance_attachedPayment_"+assetId.getAssetString()).valueOrElse(0)
   }
   func addAssetBalanceToLi(li: List[Int], assetId: ByteVector|Unit) = {li ++ [findAssetPayment(assetId)]}
   let attachedBalances = FOLD<10>(newAssetIds, [], addAssetBalanceToLi)
 
-  if (i.caller != this && i.caller != addressFromStringValue(tryGetString("static_poolOwner"))) then {throw("this call available only for admin")}
-  # else if (assetWeightsSum != 10000) then {throw("sum of token weights must be equal to 10000")}
-  else if (feeAssetStr == "") then {throw("pool must have one of the supported fee assets in the composition")}
-  else if (newAssetIdsStrLi.indexOf(baseTokenIdStr) == unit) then {throw("base token has to be included in the composition")}
+  if (i.caller != this) then {throw("this call available only for admin, " + i.caller.toString())}
   else {
     # getting oldKMult from state
     let oldKMult = getKMult()
@@ -910,7 +1060,7 @@ func doRebalancingWithNewTokens(assetIdsStr: String, assetWeightsStr: String, ba
       let assetId = newAssetIds[assetNum]
       let assetDecimals = if assetId == unit then 8 else {assetInfo(assetId.value()).value().decimals}
 
-      let newAssetData = if (deprecatedAssets.indexOf(assetIdStr) == unit) then {[
+      let newAssetData = if (addedAssets.indexOf(assetIdStr) != unit) then {[
         IntegerEntry("global_"+assetIdStr+"_balance", attachedBalances[assetNum]),
         IntegerEntry("static_"+assetIdStr+"_scale", pow(10, 0, assetDecimals, 0, 0, DOWN)),
         IntegerEntry("static_"+assetIdStr+"_decimals", assetDecimals)
