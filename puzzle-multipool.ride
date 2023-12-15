@@ -2,7 +2,7 @@
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
-let VERSION = "PZ-1.0.6 TEST"
+let VERSION = "PZ-1.0.7 TEST"
 
 ## CONSTANTS ##
 let AssetsWeightsDecimals = 4
@@ -610,6 +610,15 @@ func redeemIndex(sendToOrigin: Boolean) = {
 @Callable(i)
 func stakeIndex() = {
   let addressStr = i.originCaller.toString()
+  let pmt = i.payments[0]
+
+  if (pmt.assetId.value() != tryGetBinary("global_poolToken_id")) then {throw("wrong asset attached")} else {
+    indexStakeResult(addressStr, pmt.amount)
+  }
+}
+
+@Callable(i)
+func stakeIndexFor(addressStr: String) = {
   let pmt = i.payments[0]
 
   if (pmt.assetId.value() != tryGetBinary("global_poolToken_id")) then {throw("wrong asset attached")} else {
