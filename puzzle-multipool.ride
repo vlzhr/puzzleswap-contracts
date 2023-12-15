@@ -81,17 +81,20 @@ let usdnAssetId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
 let puzzleAssetId = base58'HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS'
 let usdtAssetId = base58'34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ'
 let usdtPptAssetId = base58'9wc3LXNA4TEBsXyKtoLE9mrbDD7WMHXvXrCjZvabLAsi'
+let wavesAssetId = unit
 
 let usdnAssetIdStr = "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p"
 let puzzleAssetIdStr = "HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS"
 let usdtAssetIdStr = "34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ"
 let usdtPptAssetIdStr = "9wc3LXNA4TEBsXyKtoLE9mrbDD7WMHXvXrCjZvabLAsi"
+let wavesAssetIdStr = "WAVES"
 
 let supportedFeeAssetsStr = [
   "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p",
   "HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS",
   "34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ",
-  "9wc3LXNA4TEBsXyKtoLE9mrbDD7WMHXvXrCjZvabLAsi"
+  "9wc3LXNA4TEBsXyKtoLE9mrbDD7WMHXvXrCjZvabLAsi",
+  "WAVES"
 ]
 
 let masterPubKey = base58'4z8CKSYQBKkzx7PBb5uBP1YPa6YAHRNTApW1sQVHT5eU'
@@ -150,7 +153,7 @@ func getKMult() = {
 func saveCurrentWeights() = {
   let assetIdsLi = tryGetString("static_tokenIds").split(",")
   func s(accum: List[IntegerEntry], assetId: String) = {
-    accum ++ [IntegerEntry("weight_start_" + assetId, tryGetInteger("static_" + assetId + "_weight"))]
+    accum ++ [IntegerEntry("rebalance_startWeight_" + assetId, tryGetInteger("static_" + assetId + "_weight"))]
   }
   FOLD<10>(assetIdsLi, [], s)
 }
@@ -924,7 +927,7 @@ func stepRebalancing() = {
       func f(accum: List[String], assetIdStr: String) = {
         accum ++ [
           # !!! adding delta * stepsDone to initial weight to eliminate rounding error accumulation
-          fraction((getInteger("weight_start_"+assetIdStr).valueOrElse(0)*10000 + assetDeltas[newAssetIds.indexOf(assetIdStr).value()].parseIntValue() * (stepsDone + 1)), 1, 10000, HALFUP).toString()
+          fraction((getInteger("rebalance_startWeight_"+assetIdStr).valueOrElse(0)*10000 + assetDeltas[newAssetIds.indexOf(assetIdStr).value()].parseIntValue() * (stepsDone + 1)), 1, 10000, HALFUP).toString()
         ]
       }
       let newShares = makeString(FOLD<10>(newAssetIds, [], f), ",")
