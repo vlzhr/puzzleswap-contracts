@@ -2,7 +2,7 @@
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
-let VERSION = "PZ-1.0.7 TEST"
+let VERSION = "PZ-1.0.8 TEST"
 
 ## CONSTANTS ##
 let AssetsWeightsDecimals = 4
@@ -77,30 +77,30 @@ func addIntToList(accum: List[Int], item: String) = { accum ++ [item.parseIntVal
 
 ## CONFIG ##
 # TODO move to external contract's data storage
-let usdnAssetIdStr = tryGetStringOrThrow("usdnAssetId")
-let puzzleAssetIdStr = tryGetStringOrThrow("puzzleAssetId")
-let usdtAssetIdStr = tryGetStringOrThrow("usdtAssetId")
-let usdtPptAssetIdStr = tryGetStringOrThrow("usdtPptAssetId")
+let usdnAssetId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
+let puzzleAssetId = base58'HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS'
+let usdtAssetId = base58'34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ'
+let usdtPptAssetId = base58'9wc3LXNA4TEBsXyKtoLE9mrbDD7WMHXvXrCjZvabLAsi'
 
-let usdnAssetId = fromBase58String(usdnAssetIdStr)
-let puzzleAssetId = fromBase58String(puzzleAssetIdStr)
-let usdtAssetId = fromBase58String(usdtAssetIdStr)
-let usdtPptAssetId = fromBase58String(usdtPptAssetIdStr)
+let usdnAssetIdStr = "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p"
+let puzzleAssetIdStr = "HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS"
+let usdtAssetIdStr = "34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ"
+let usdtPptAssetIdStr = "9wc3LXNA4TEBsXyKtoLE9mrbDD7WMHXvXrCjZvabLAsi"
 
 let supportedFeeAssetsStr = [
-    "WAVES",
-  usdnAssetIdStr, 
-  puzzleAssetIdStr,
-  usdtAssetIdStr,
-  usdtPptAssetIdStr
+  "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p",
+  "HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS",
+  "34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ",
+  "9wc3LXNA4TEBsXyKtoLE9mrbDD7WMHXvXrCjZvabLAsi"
 ]
 
-let parentPoolAddress = Address(fromBase58String(tryGetStringOrThrow("parentPoolAddress")))
-let masterAddress = Address(fromBase58String(tryGetStringOrThrow("masterAddress"))) # not used
-let masterPubKey = fromBase58String(tryGetStringOrThrow("masterPubKey")) # verifier
-let oracleAddress = Address(fromBase58String(tryGetStringOrThrow("oracleAddress")))
-let stakingAddress = Address(fromBase58String(tryGetStringOrThrow("stakingAddress")))
-let feesAddress = Address(fromBase58String(tryGetStringOrThrow("feesAddress")))
+let masterPubKey = base58'4z8CKSYQBKkzx7PBb5uBP1YPa6YAHRNTApW1sQVHT5eU'
+let parentPoolAddress = Address(base58'3PFDgzu1UtswAkCMxqqQjbTeHaX4cMab8Kh')
+let masterAddress = Address(base58'3PLjwHcz9NEuaTo63NZR9B9okQiKQxZSbmf') # not used
+let oracleAddress = Address(base58'3P8d1E1BLKoD52y3bQJ1bDTd2TD1gpaLn9t')
+let stakingAddress = Address(base58'3PFTbywqxtFfukX3HyT881g4iW5K4QL3FAS')
+let feesAddress = Address(base58'3P4kBiU4wr2yV1S5gMfu3MdkVvy7kxXHsKe')
+let poolsHubAddress = Address(base58'3P5YutjDNC3hABBVsveFuZTTbQ5PdtSDBgk')
 
 
 ## GLOBAL VARIABLES ##
@@ -274,7 +274,7 @@ func handlePoolTokensAdd(PIssued: Int, payments: List[AttachedPayment], userAddr
 
 
     let paymentAmount = getTokenPaymentAmount(tokenId)
-    let toReturn = (if (paymentAmount != 0) then {paymentAmount} else {0}) - Dk # ???
+    let toReturn = paymentAmount - Dk
 
     let t = if (needChange && toReturn > 0) then {[ScriptTransfer(userAddress, toReturn, tokenId)]} else {[]}
     accum ++ t ++ [
@@ -555,6 +555,7 @@ func init() = {
 
 @Callable(i)
 func reset() = {
+  # TODO: delete
   [
     IntegerEntry("global_poolToken_amount", 200000000),
     IntegerEntry("global_WAVES_balance", 400000000),
@@ -868,8 +869,6 @@ func setRebalancingPlan(assetIdsStr: String, assetWeightsStr: String, baseTokenI
       let tmpAssetIdsLi = getTmpRebalanceIds(newAssetIdsStrLi) 
       let assetDeltas = FOLD<10>(tmpAssetIdsLi, [], f)
 
-      
-
       # is composition changed?
       
       let newTokensAdded = checkTokensChange(newAssetIdsStrLi) > 0 # !!! compare lists items instead of comparing strings, may be better
@@ -879,6 +878,9 @@ func setRebalancingPlan(assetIdsStr: String, assetWeightsStr: String, baseTokenI
       }
       let paymentEntries = FOLD<10>(i.payments, [], recordAssetPayment)
       let storeWeights = saveCurrentWeights() # !!! save start weights to remove deltas rounding error accumulation
+
+      strict notifyInvoke = invoke(poolsHubAddress, "notifyPoolChange", [], [])
+
       [
         StringEntry("rebalance_addedAssets", makeString(addedAssets, ",")),
         StringEntry("rebalance_removedAssets", makeString(removedAssets, ",")),
@@ -932,6 +934,8 @@ func stepRebalancing() = {
       } else {
         invoke(this, "doRebalancing", [newShares], [])
       }
+
+      strict notifyInvoke = invoke(poolsHubAddress, "notifyPoolChange", [], [])
 
       let isFinished = (stepsDone + 1) >= getIntegerValue("rebalance_stepsAmount")
 
@@ -1092,17 +1096,11 @@ func doRebalancingWithNewTokens(assetIdsStr: String, assetWeightsStr: String, ba
   }
 }
 
-# @Callable(i)
-# func test_reset() = {
-
-# }
-
 @Verifier(tx)
 func verify() = {
   if (isShutdown()) then {
     false
   } else {
-    # sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey) || sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey)
-    sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey)
+    sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey) || sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey)
   }
 }
