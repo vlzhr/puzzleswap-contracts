@@ -105,7 +105,7 @@ let oracleAddress = Address(base58'3P8d1E1BLKoD52y3bQJ1bDTd2TD1gpaLn9t')
 let stakingAddress = Address(base58'3PFTbywqxtFfukX3HyT881g4iW5K4QL3FAS')
 let feesAddress = Address(base58'3P4kBiU4wr2yV1S5gMfu3MdkVvy7kxXHsKe')
 let poolsHubAddress = Address(base58'3P5YutjDNC3hABBVsveFuZTTbQ5PdtSDBgk')
-let shutdownAddressStr = "3PEpv9hRFWEEBU22WRnLsw1bH4YGtcU728o'"
+let shutdownAddressStr = "3PEpv9hRFWEEBU22WRnLsw1bH4YGtcU728o"
 
 
 ## GLOBAL VARIABLES ##
@@ -1103,9 +1103,5 @@ func doRebalancingWithNewTokens(assetIdsStr: String, assetWeightsStr: String, ba
 
 @Verifier(tx)
 func verify() = {
-  if (isShutdown()) then {
-    false
-  } else {
-    sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey) || sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey)
-  }
+  sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey) || sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey)
 }
