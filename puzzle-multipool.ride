@@ -2,7 +2,15 @@
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
-let VERSION = "PZ-1.0.8 PROD"
+let VERSION = "PZ-1.0.9 PROD"
+
+# may be better 
+let configStr = getString(this, "configAddress").valueOrElse("")
+let CONFIG_ADDRESS = if (configStr == "") then {
+  this
+} else {
+  Address(fromBase58String(configStr))
+}
 
 ## CONSTANTS ##
 let AssetsWeightsDecimals = 4
@@ -15,10 +23,12 @@ let PoolTokenScale = pow(10, 0, PoolTokenDecimals, 0, 0, HALFUP)
 
 # !!! rebalance constants 
 # TODO move to external contract's data storage
-let MIN_STEPS_AMOUNT = 1
-let MAX_STEPS_AMOUNT = 500
-let MIN_STEPS_INTERVAL = 1
-let MAX_STEPS_INTERVAL = 10000
+let MIN_STEPS_AMOUNT = getInteger(CONFIG_ADDRESS, "min_steps_amount").valueOrElse(1)
+let MAX_STEPS_AMOUNT = getInteger(CONFIG_ADDRESS, "max_steps_amount").valueOrElse(500)
+let MIN_STEPS_INTERVAL = getInteger(CONFIG_ADDRESS, "min_steps_interval").valueOrElse(1)
+let MAX_STEPS_INTERVAL = getInteger(CONFIG_ADDRESS, "max_steps_interval").valueOrElse(10000)
+let MIN_WEIGHT = getInteger(CONFIG_ADDRESS, "min_weight").valueOrElse(100)
+let MAX_WEIGHT = getInteger(CONFIG_ADDRESS, "max_weight").valueOrElse(9900)
 
 
 ## HELPER METHODS ##
@@ -77,35 +87,28 @@ func addIntToList(accum: List[Int], item: String) = { accum ++ [item.parseIntVal
 
 
 ## CONFIG ##
-# TODO move to external contract's data storage
-let usdnAssetId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
-let puzzleAssetId = base58'HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS'
-let usdtAssetId = base58'34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ'
-let usdtPptAssetId = base58'9wc3LXNA4TEBsXyKtoLE9mrbDD7WMHXvXrCjZvabLAsi'
-let wavesAssetId = unit
-
-let usdnAssetIdStr = "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p"
-let puzzleAssetIdStr = "HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS"
-let usdtAssetIdStr = "34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ"
-let usdtPptAssetIdStr = "9wc3LXNA4TEBsXyKtoLE9mrbDD7WMHXvXrCjZvabLAsi"
+let usdnAssetIdStr = getString(CONFIG_ADDRESS, "usdnAssetIdStr").valueOrElse("DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p")
+let puzzleAssetIdStr = getString(CONFIG_ADDRESS, "puzzleAssetIdStr").valueOrElse("HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS")
+let usdtAssetIdStr = getString(CONFIG_ADDRESS,  "usdtAssetIdStr").valueOrElse("34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ")
+let usdtPptAssetIdStr = getString(CONFIG_ADDRESS, "usdtPptAssetIdStr").valueOrElse("9wc3LXNA4TEBsXyKtoLE9mrbDD7WMHXvXrCjZvabLAsi")
 let wavesAssetIdStr = "WAVES"
 
-let supportedFeeAssetsStr = [
-  "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p",
-  "HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS",
-  "34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ",
-  "9wc3LXNA4TEBsXyKtoLE9mrbDD7WMHXvXrCjZvabLAsi",
-  "WAVES"
-]
+let usdnAssetId = fromBase58String(usdnAssetIdStr)
+let puzzleAssetId = fromBase58String(puzzleAssetIdStr)
+let usdtAssetId = fromBase58String(usdtAssetIdStr)
+let usdtPptAssetId = fromBase58String(usdtPptAssetIdStr)
+let wavesAssetId = unit
 
-let masterPubKey = base58'4z8CKSYQBKkzx7PBb5uBP1YPa6YAHRNTApW1sQVHT5eU'
-let parentPoolAddress = Address(base58'3PFDgzu1UtswAkCMxqqQjbTeHaX4cMab8Kh')
-let masterAddress = Address(base58'3PLjwHcz9NEuaTo63NZR9B9okQiKQxZSbmf') # not used
-let oracleAddress = Address(base58'3P8d1E1BLKoD52y3bQJ1bDTd2TD1gpaLn9t')
-let stakingAddress = Address(base58'3PFTbywqxtFfukX3HyT881g4iW5K4QL3FAS')
-let feesAddress = Address(base58'3P4kBiU4wr2yV1S5gMfu3MdkVvy7kxXHsKe')
-let poolsHubAddress = Address(base58'3P5YutjDNC3hABBVsveFuZTTbQ5PdtSDBgk')
-let shutdownAddressStr = "3PEpv9hRFWEEBU22WRnLsw1bH4YGtcU728o"
+let supportedFeeAssetsStr = [usdnAssetIdStr, puzzleAssetIdStr, usdtAssetIdStr, usdtPptAssetIdStr, wavesAssetIdStr]
+
+let parentPoolAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "parentPoolAddress").valueOrElse("3PFDgzu1UtswAkCMxqqQjbTeHaX4cMab8Kh")))
+let masterAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "masterAddress").valueOrElse("3PLjwHcz9NEuaTo63NZR9B9okQiKQxZSbmf")))
+let masterPubKey = fromBase58String(getString(CONFIG_ADDRESS, "masterPubKey").valueOrElse("4z8CKSYQBKkzx7PBb5uBP1YPa6YAHRNTApW1sQVHT5eU")) # verifier
+let oracleAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "oracleAddress").valueOrElse("3P8d1E1BLKoD52y3bQJ1bDTd2TD1gpaLn9t")))
+let stakingAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "stakingAddress").valueOrElse("3PFTbywqxtFfukX3HyT881g4iW5K4QL3FAS")))
+let feesAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "feesAddress").valueOrElse("3P4kBiU4wr2yV1S5gMfu3MdkVvy7kxXHsKe")))
+let poolsHubAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "poolsHubAddress").valueOrElse("3MBrUXncRL8Lz6JZbrp1t1WD3PCAXPHuLdS")))
+let shutdownAddressStr = getString(CONFIG_ADDRESS, "shutdownAddress").valueOrElse("3PEpv9hRFWEEBU22WRnLsw1bH4YGtcU728o")
 
 
 ## GLOBAL VARIABLES ##
@@ -432,18 +435,28 @@ func validatePayments(assetsList: List[String], payments: List[AttachedPayment])
   # check if wrong asset in payments
   func f1(accum: Int, next: String) = {
     if (assetsList.indexOf(next) == unit) then {throw(next + " asset is present in payments, but is not in new assets: " + makeString(assetsList, ","))}
-    else accum
+    else accum+1
   }
 
   # check if asset is missing in payments
   func f2(accum: Int, next: String) = {
     if (paymentList.indexOf(next) == unit) then {throw(next + " asset is present in new assets, but is not in payments: " + makeString(paymentList, ","))}
-    else accum
+    else accum+1
   }
 
-  let a1 = FOLD<10>(paymentList, 1, f1)
-  let a2 = FOLD<10>(assetsList, 1, f2)
+  let a1 = FOLD<10>(paymentList, 0, f1)
+  let a2 = FOLD<10>(assetsList, 0, f2)
   a1 + a2
+}
+
+func validateWeights(weights: List[String]) = {
+  func v(accum: Int, w: String) = {
+    let wInt = w.parseInt().valueOrErrorMessage("Wrong weight format: " + w)
+    if (wInt < MIN_WEIGHT || wInt > MAX_WEIGHT) then {
+        throw("Weight should be in range " + MIN_WEIGHT.toString() + " - " + MAX_WEIGHT.toString() + ", current: " + w)
+      } else {accum}
+  }
+  FOLD<10>(weights, 0, v)
 }
 
 ## CALLABLE METHODS ##
@@ -854,54 +867,60 @@ func setRebalancingPlan(assetIdsStr: String, assetWeightsStr: String, baseTokenI
     let addedAssets = FOLD<10>(newAssetIdsStrLi, [], findAdded)
     let removedAssets = FOLD<10>(oldAssetIdsLi, [], findRemoved)
     let validPayments = validatePayments(addedAssets, i.payments)
-    # validate arguments:
-    if (newAssetIdsStrLi.size() != newAssetWeightsStrLi.size()) then {throw("assetIds and assetWeights should have same length")}
-    else if (feeAssetStr == "") then {throw("pool must have one of the supported fee assets in the composition")}
-    else if (newAssetIdsStrLi.indexOf(baseTokenIdStr) == unit) then {throw("baseTokenId should be present in assetIds")}
-    else if (stepsAmount < MIN_STEPS_AMOUNT || stepsAmount > MAX_STEPS_AMOUNT) then {throw("Steps amount should be between " + MIN_STEPS_AMOUNT.toString() + " and " + MAX_STEPS_AMOUNT.toString())} 
-    else if (stepsInterval < MIN_STEPS_INTERVAL || stepsInterval > MAX_STEPS_INTERVAL) then {throw("Steps interval should be between " + MIN_STEPS_INTERVAL.toString() + " and " + MAX_STEPS_INTERVAL.toString())} 
-    else if (assetWeightsSum != 10000) then {throw("sum of token weights must be equal to 10000")}
-    else {
-      # calculating price change per step for every token
-      func f(accum: List[String], assetIdStr: String) = {
-        let oldWeight = tryGetInteger("static_"+assetIdStr+"_weight")
-        let newWeight = if (newAssetIdsStrLi.indexOf(assetIdStr) == unit) then 0 else newAssetWeightsStrLi[newAssetIdsStrLi.indexOf(assetIdStr).value()].value().parseIntValue()
-        let deltaPerStep = fraction(newWeight - oldWeight, 10000, stepsAmount)
-        accum ++ [deltaPerStep.toString()]
-      } 
+    strict validWeights = validateWeights(newAssetWeightsStrLi)
+    if (validPayments != (addedAssets.size() + i.payments.size())) then {
+      throw("Payments not present or something wrong with them")
+    } else 
+    {  # validate arguments:
+      if (newAssetIdsStrLi.size() != newAssetWeightsStrLi.size()) then {throw("assetIds and assetWeights should have same length")}
+      else if (validPayments != (addedAssets.size() + i.payments.size())) then {throw("Payments not present or something wrong with them")}
+      else if (feeAssetStr == "") then {throw("pool must have one of the supported fee assets in the composition")}
+      else if (newAssetIdsStrLi.indexOf(baseTokenIdStr) == unit) then {throw("baseTokenId should be present in assetIds")}
+      else if (stepsAmount < MIN_STEPS_AMOUNT || stepsAmount > MAX_STEPS_AMOUNT) then {throw("Steps amount should be between " + MIN_STEPS_AMOUNT.toString() + " and " + MAX_STEPS_AMOUNT.toString() + ", current: " + stepsAmount.toString())} 
+      else if (stepsInterval < MIN_STEPS_INTERVAL || stepsInterval > MAX_STEPS_INTERVAL) then {throw("Steps interval should be between " + MIN_STEPS_INTERVAL.toString() + " and " + MAX_STEPS_INTERVAL.toString() + ", current: " + stepsInterval.toString())} 
+      else if (assetWeightsSum != 10000) then {throw("sum of token weights must be equal to 10000, current: " + assetWeightsSum.toString())}
+      else {
+        # calculating price change per step for every token
+        func f(accum: List[String], assetIdStr: String) = {
+          let oldWeight = tryGetInteger("static_"+assetIdStr+"_weight")
+          let newWeight = if (newAssetIdsStrLi.indexOf(assetIdStr) == unit) then 0 else newAssetWeightsStrLi[newAssetIdsStrLi.indexOf(assetIdStr).value()].value().parseIntValue()
+          let deltaPerStep = fraction(newWeight - oldWeight, 10000, stepsAmount)
+          accum ++ [deltaPerStep.toString()]
+        } 
 
-      # !!! use union of old and new assets to have delta both for added and removed tokens
-      let tmpAssetIdsLi = getTmpRebalanceIds(newAssetIdsStrLi) 
-      let assetDeltas = FOLD<10>(tmpAssetIdsLi, [], f)
+        # !!! use union of old and new assets to have delta both for added and removed tokens
+        let tmpAssetIdsLi = getTmpRebalanceIds(newAssetIdsStrLi) 
+        let assetDeltas = FOLD<10>(tmpAssetIdsLi, [], f)
 
-      # is composition changed?
-      
-      let newTokensAdded = checkTokensChange(newAssetIdsStrLi) > 0 # !!! compare lists items instead of comparing strings, may be better
+        # is composition changed?
+        
+        let newTokensAdded = checkTokensChange(newAssetIdsStrLi) > 0 # !!! compare lists items instead of comparing strings, may be better
 
-      func recordAssetPayment(accum: List[IntegerEntry], next: AttachedPayment) = {
-        accum ++ [IntegerEntry("rebalance_attachedPayment_" + next.assetId.getAssetString(), next.amount)]
+        func recordAssetPayment(accum: List[IntegerEntry], next: AttachedPayment) = {
+          accum ++ [IntegerEntry("rebalance_attachedPayment_" + next.assetId.getAssetString(), next.amount)]
+        }
+        let paymentEntries = FOLD<10>(i.payments, [], recordAssetPayment)
+        let storeWeights = saveCurrentWeights() # !!! save start weights to remove deltas rounding error accumulation
+
+        strict notifyInvoke = invoke(poolsHubAddress, "notifyPoolChange", [], [])
+
+        [
+          StringEntry("rebalance_addedAssets", makeString(addedAssets, ",")),
+          StringEntry("rebalance_removedAssets", makeString(removedAssets, ",")),
+          StringEntry("tmp_rebalanceAssetIds", makeString(tmpAssetIdsLi, ",")),
+          BooleanEntry("rebalance_inProgress", true),
+          BooleanEntry("rebalance_newTokensAdded", newTokensAdded),
+          IntegerEntry("rebalance_stepsDone", 0),
+          IntegerEntry("rebalance_lastStepHeight", height),
+
+          IntegerEntry("rebalance_stepsAmount", stepsAmount),
+          IntegerEntry("rebalance_stepsInterval", stepsInterval),  # interval between steps in blocks
+          StringEntry("rebalance_assetIds", assetIdsStr),
+          StringEntry("rebalance_newBaseTokenId", baseTokenIdStr), # will only be enacted if new tokens added
+
+          StringEntry("rebalance_assetDeltas", assetDeltas.makeString(","))
+        ] ++ paymentEntries ++ storeWeights
       }
-      let paymentEntries = FOLD<10>(i.payments, [], recordAssetPayment)
-      let storeWeights = saveCurrentWeights() # !!! save start weights to remove deltas rounding error accumulation
-
-      strict notifyInvoke = invoke(poolsHubAddress, "notifyPoolChange", [], [])
-
-      [
-        StringEntry("rebalance_addedAssets", makeString(addedAssets, ",")),
-        StringEntry("rebalance_removedAssets", makeString(removedAssets, ",")),
-        StringEntry("tmp_rebalanceAssetIds", makeString(tmpAssetIdsLi, ",")),
-        BooleanEntry("rebalance_inProgress", true),
-        BooleanEntry("rebalance_newTokensAdded", newTokensAdded),
-        IntegerEntry("rebalance_stepsDone", 0),
-        IntegerEntry("rebalance_lastStepHeight", height),
-
-        IntegerEntry("rebalance_stepsAmount", stepsAmount),
-        IntegerEntry("rebalance_stepsInterval", stepsInterval),  # interval between steps in blocks
-        StringEntry("rebalance_assetIds", assetIdsStr),
-        StringEntry("rebalance_newBaseTokenId", baseTokenIdStr), # will only be enacted if new tokens added
-
-        StringEntry("rebalance_assetDeltas", assetDeltas.makeString(","))
-      ] ++ paymentEntries ++ storeWeights
     }
   }
 }
@@ -961,13 +980,23 @@ func stepRebalancing() = {
             DeleteEntry("static_" + assetId + "_scale"),
             DeleteEntry("static_" + assetId + "_decimals"),
             DeleteEntry("static_" + assetId + "_weight"),
-            DeleteEntry("static_" + assetId + "_balance")
+            DeleteEntry("global_" + assetId + "_balance"),
+            DeleteEntry("rebalance_attachedPayment_" + assetId)
           ]
         }
         let rm = FOLD<10>(removedAssetsLi, [], rmData)
+
+        let addedAssetsLi = tryGetString("rebalance_addedAssets").split(",")
+        func addRemovePayments(accum: List[DeleteEntry], assetId: String) = {
+          accum ++ [
+            DeleteEntry("rebalance_attachedPayment_" + assetId)
+          ]
+        }
+        let rmPayments = FOLD<10>(addedAssetsLi, [], addRemovePayments)
+
         let finalAssetsIdsStr = tryGetString("rebalance_assetIds")
         let AssetsWeightsStr = FOLD<10>(finalAssetsIdsStr.split(","), [], addAssetWeightToStrList)
-        actions ++ rm ++ [
+        actions ++ rm ++ rmPayments ++ [
           StringEntry("static_tokenIds", finalAssetsIdsStr),
           StringEntry("static_tokenWeights", makeString(AssetsWeightsStr, ",")),
           IntegerEntry("static_tokensAmount", finalAssetsIdsStr.split(",").size())
