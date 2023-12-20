@@ -5,7 +5,7 @@
 let VERSION = "PZ-1.0.9 PROD"
 
 # may be better 
-let configStr = getString(this, "configAddress").valueOrElse("")
+let configStr = getString(this, "configAddress").valueOrElse("3PPEBRg4s2af2rQ2ZbLvdu1Hfd4Vo6QVDTo")
 let CONFIG_ADDRESS = if (configStr == "") then {
   this
 } else {
