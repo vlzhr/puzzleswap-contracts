@@ -186,6 +186,7 @@ func swapInternal(i: Invocation, routesStr: String, minToReceive: Int, refKey: S
   if (refKey == "muna") then {Address(base58'3PGFHzVGT4NTigwCKP1NcwoXkodVZwvBuuU')}
   else if (refKey == "keeper") then {Address(base58'3PNgw6Db2TGUQbjnV7ekve6q126xBC1e7eM')} 
   else if (refKey == "tci") then {Address(base58'3P93R2GBkTGVehRPhytHr7sdxYww93jkbhm')} 
+  else if (getString(this, "ref_"+refKey).valueOrElse("") != "") then {getStringValue(this, "ref_"+refKey).addressFromStringValue()}
   else {Address(base58'3PQxXXiQXpWsjDwQLYxyuoPiaLnVHjJguFo')}
   let refUsdnShare = if(refKey =="noref") then 0 else fraction(usdnFee, 2, 10)
 
@@ -230,6 +231,16 @@ func addTokenPuzzlePool(assetIdStr: String, poolAddressStr: String) = {
   else {
     [
       StringEntry("static_asset_"+assetIdStr+"_puzzlePool", poolAddressStr)
+    ]
+  }
+}
+
+@Callable(i)
+func addReferralKey(refKey: String, addressStr: String) = {
+  if (i.caller != Address(base58'3PMcMiMEs6w56NRGacksXtFG5zS7doE9fpL')) then {throw("admin only")}
+  else {
+    [
+      StringEntry("ref_"+refKey, addressStr)
     ]
   }
 }
