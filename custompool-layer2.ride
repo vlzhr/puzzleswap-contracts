@@ -1,4 +1,4 @@
-{-# STDLIB_VERSION 5 #-}
+{-# STDLIB_VERSION 6 #-}
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
@@ -32,35 +32,35 @@ func addAssetBytesToList(accum: List[ByteVector], item: String) = { accum ++ [it
 
 @Callable(i)
 func generateIndexWithOneTokenAndStake(mainAddressStr: String) = {
+  let tokenId = i.payments[0].assetId
+  let baseAssetId = tokenId
+  
   let mainAddress = Address(mainAddressStr.fromBase58String())
   let assetIds = FOLD<10>(getStringValue(mainAddress, "static_tokenIds").split(","), [], addAssetBytesToList)
-  let baseAssetId = getStringValue(mainAddress, "static_baseTokenId").getAssetBytes()
-  let secondaryAssetIds = assetIds.removeByIndex(assetIds.indexOf(baseAssetId).value())
+  let secondaryAssetIds = assetIds.removeByIndex(assetIds.indexOf(tokenId).value())
   let poolIndexId = getBinaryValue(mainAddress, "global_poolToken_id")
 
-  let tokenId = i.payments[0].assetId
   let amount = i.payments[0].amount / 10000
-  if (tokenId != baseAssetId) then {throw("base asset only")} else {
-    func handler(accum: List[AttachedPayment], assetId: ByteVector) = {
-      let assetIdStr = assetId.getAssetString()
-      let assetWeight = getIntegerValue(mainAddress, "static_" + assetIdStr + "_weight")
-      strict in = match reentrantInvoke(mainAddress, "swap", [assetId.getAssetString(), 0], [AttachedPayment(baseAssetId, amount * assetWeight)]) {
-            case x: Int => x
-            case _ => 0
-      }
-      accum ++ [AttachedPayment(assetId, in)]
-    }
 
-    let baseAssetWeight = getIntegerValue(mainAddress, "static_" + baseAssetId.getAssetString() + "_weight")
-    strict exchangeInvokes = FOLD<9>(secondaryAssetIds, [AttachedPayment(baseAssetId, amount * baseAssetWeight)], handler)
-    strict PIssuedAmount = match reentrantInvoke(mainAddress, "generateIndex", [false], exchangeInvokes) {
-      case x: Int => x
-      case _ => 0
+  func handler(accum: List[AttachedPayment], assetId: ByteVector) = {
+    let assetIdStr = assetId.getAssetString()
+    let assetWeight = getIntegerValue(mainAddress, "static_" + assetIdStr + "_weight")
+    strict in = match reentrantInvoke(mainAddress, "swap", [assetId.getAssetString(), 0], [AttachedPayment(baseAssetId, amount * assetWeight)]) {
+          case x: Int => x
+          case _ => 0
     }
-    strict stakeInvoke = reentrantInvoke(mainAddress, "stakeIndex", [], [AttachedPayment(poolIndexId, PIssuedAmount)])
-
-    []
+    accum ++ [AttachedPayment(assetId, in)]
   }
+
+  let baseAssetWeight = getIntegerValue(mainAddress, "static_" + baseAssetId.getAssetString() + "_weight")
+  strict exchangeInvokes = FOLD<9>(secondaryAssetIds, [AttachedPayment(baseAssetId, amount * baseAssetWeight)], handler)
+  strict PIssuedAmount = match reentrantInvoke(mainAddress, "generateIndex", [false], exchangeInvokes) {
+    case x: Int => x
+    case _ => 0
+  }
+  strict stakeInvoke = reentrantInvoke(mainAddress, "stakeIndex", [], [AttachedPayment(poolIndexId, PIssuedAmount)])
+
+  []
 }
 
 @Callable(i)
@@ -139,4 +139,3 @@ func verify() = {
     sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey)
   }
 }
-
