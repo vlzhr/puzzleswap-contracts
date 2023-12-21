@@ -135,10 +135,12 @@ func isShutdown() = {
   if (shutdownAddressStr == "") then {
     false
   } else {
-    let shutdownAddress = Address(fromBase58String(shutdownAddressStr))
-    match getBoolean(shutdownAddress, "is_shutdown") {
-      case x: Boolean => x
-      case _ => false
+    let shutdownAddress = addressFromString(shutdownAddressStr)
+    if shutdownAddress == unit then {false} else {
+      match getBoolean(shutdownAddress.value(), "is_shutdown") {
+        case x: Boolean => x
+        case _ => false
+      }
     }
   }
 }
