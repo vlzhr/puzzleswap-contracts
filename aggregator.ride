@@ -71,8 +71,10 @@ func swapWX(asset0: String, asset1: String, amount0: Int) = {
 func swapLimit(params: String, t0Str: String, t1Str: String) = {
     func doLimit(asset: ByteVector|Unit, orderParams: String) = {
         let ord = orderParams.split(">")
-        let (orderId, orderAmount) = (ord[0], ord[1])
-        strict inv = invoke(Address(limitContract.fromBase58String()),"fulfillOrder",[orderId],[AttachedPayment(asset, orderAmount.parseIntValue())]) 
+        let (orderId, orderAmount) = (ord[0], ord[1].parseIntValue())
+        let balanceIn = getBalance(asset)
+        let actualAmount = min([orderAmount, balanceIn])
+        strict inv = invoke(Address(limitContract.fromBase58String()),"fulfillOrder",[orderId],[AttachedPayment(asset, actualAmount)]) 
         asset
     }
     let ordersLi = params.split(":")
