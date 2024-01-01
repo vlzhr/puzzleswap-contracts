@@ -35,44 +35,13 @@ func getBalance(assetId: ByteVector|Unit) = {
   }
 }
 
-func swapWX(asset0: String, asset1: String, amount0: Int) = {
-  # let priceAsset = 
-  # if (asset0 == "34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ" || asset1 == "34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ") then {"34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ"}
-  # else if (asset0 == "6XtHjpXbs9RRJP2Sr9GUyVqzACcby9TkThHXnjVC5CDJ" || asset1 == "6XtHjpXbs9RRJP2Sr9GUyVqzACcby9TkThHXnjVC5CDJ") then {"6XtHjpXbs9RRJP2Sr9GUyVqzACcby9TkThHXnjVC5CDJ"}
-  # else if (asset0 == usdnIdStr || asset1 == usdnIdStr) then {usdnIdStr}   
-  # else if (asset0 == "8LQW8f7P5d5PZM7GtZEBgaqRPGSzS3DfPuiXrURJ4AJS" || asset1 == "8LQW8f7P5d5PZM7GtZEBgaqRPGSzS3DfPuiXrURJ4AJS") then {"8LQW8f7P5d5PZM7GtZEBgaqRPGSzS3DfPuiXrURJ4AJS"}
-  # else if (asset0 == "WAVES" || asset1 == "WAVES") then {"WAVES"}
-  # else {usdnIdStr}
 
-  # let factoryAddress = Address(base58'3PCuHsTU58WKhCqotbcSwABvdPzqqVAbbTv')
-  # let assetInt = getIntegerValue(factoryAddress, "%s%s%s__mappings__baseAsset2internalId__" + (if (asset1 != priceAsset) then {asset1} else {asset0})).toString()
-  # let usdnInt = getIntegerValue(factoryAddress, "%s%s%s__mappings__baseAsset2internalId__" + priceAsset).toString()
-  # let poolConfig = getStringValue(factoryAddress, "%d%d%s__" + assetInt + "__" + usdnInt + "__config").split("__")
-
-  # let poolAddress = poolConfig[1].addressFromStringValue()
-  # let poolAssetId = poolConfig[3]
-
-  # # throw(poolConfig[1])
-
-  # strict inv1 = invoke(poolAddress, "putOneTkn", [0, false], [AttachedPayment(getAssetBytes(asset0), amount0)])
-  # strict poolTokenAmount = getBalance(poolAssetId.getAssetBytes())
-
-  # strict asset1BalanceBefore = getBalance(asset1.getAssetBytes())
-  # strict inv2 = invoke(poolAddress, "getOneTkn", [asset1, 0], [AttachedPayment(getAssetBytes(poolAssetId), poolTokenAmount)])
-  # strict amount1 = getBalance(asset1.getAssetBytes()) - asset1BalanceBefore
-
-  strict asset1BalanceBefore = getBalance(asset1.getAssetBytes())
-  strict inv1 = invoke(Address(base58'3P68zNiufsu1viZpu1aY3cdahRRKcvV5N93'), "swap", [1, asset1, this.toString()], [AttachedPayment(asset0.getAssetBytes(), amount0)])
-  strict amount1 = getBalance(asset1.getAssetBytes()) - asset1BalanceBefore
-
-  amount1
-}
-
-func swapLimit(params: String, t0Str: String, t1Str: String) = {
+func swapLimit(params: String, t0Str: String, t1Str: String, balanceBefore: Int) = {
     func doLimit(asset: ByteVector|Unit, orderParams: String) = {
         let ord = orderParams.split(">")
         let (orderId, orderAmount) = (ord[0], ord[1])
-        strict inv = invoke(Address(limitContract.fromBase58String()),"fulfillOrder",[orderId],[AttachedPayment(asset, orderAmount.parseIntValue())]) 
+        strict balanceActual = getBalance(t0Str.getAssetBytes()) - balanceBefore
+        strict inv = invoke(Address(limitContract.fromBase58String()),"fulfillOrder",[orderId],[AttachedPayment(asset, balanceActual)]) 
         asset
     }
     let ordersLi = params.split(":")
@@ -112,58 +81,94 @@ func swapInternal(i: Invocation, routesStr: String, minToReceive: Int, refKey: S
 
   let shutdown = getBoolean("shutdown").valueOrElse(false)
   if (shutdown) then {throw("shutdown")}
+  else if (i.payments.size() > 1) then {throw("only one payment should be attached")}
   else {
 
-  func doSwap(amount: Int, swap: String) = {
-    let swapLi = swap.split(",")
-    let (dApp, dAppType, t0Str, t1Str) = (swapLi[0], swapLi[1], swapLi[2], swapLi[3])
+    # extract payment
+    let asset0 = i.payments[0].assetId
+    let asset0Str = asset0.getAssetString()
+    let payAmount = i.payments[0].amount
 
-    let t0 = getAssetBytes(t0Str)
-
-    let amount0 = if( amount != 0 ) then amount else getBalance(t0)
-
-    strict i1 = if (dAppType == "swopfi") then {
-      invoke(Address(dApp.fromBase58String()),"exchange",[1],[AttachedPayment(t0, amount0)]) 
-    } else if (dAppType == "puzzle") then {
-      invoke(Address(dApp.fromBase58String()),"swap",[t1Str, 0],[AttachedPayment(t0, amount0)]) 
-    } else if (dAppType == "wx") then {
-      swapWX(t0Str, t1Str, amount0)
-    } else if (dAppType == "limit") then {
-        swapLimit(dApp, t0Str, t1Str)
-    } else if (dAppType == "tsunami") then {
-        invoke(Address(tsnContract.fromBase58String()), "swap", [t1Str, 0], [AttachedPayment(t0, amount0)])
-    } else if (dAppType == "lend") then {
-        swapLend(dApp, t0Str, t1Str, amount0)
-    } else if (dAppType == "pepe") then {
-        swapPepe(dApp, t0Str, t1Str, amount0)
-    }
-      else {
-      throw("internal aggregator issue: unknow pool type")
+    # add assets from swap string to affectedAssets list, if they are not present
+    func f1(accum2: List[String], next: String) = {
+      let swapElements = next.split(",")
+      let t1 = if (indexOf(accum2, swapElements[2]) == unit) then {accum2 :+ swapElements[2]} else {accum2}
+      let t2 = if (indexOf(accum2, swapElements[3]) == unit) then {t1 :+ swapElements[3]} else {t1}
+      t2
     }
 
-    0
-  }
+    # extract swap strings from route string
+    func extractAssets(accum: List[String], next: String) = {
+      let r1 = next.split("/")
+      let data = r1[1]
+      let swaps = data.split(";")
+      accum ++ FOLD<20>(swaps, accum, f1)
+    }
 
-  func doRoute(accum: Int, route: String) = {
-    let amountIn = route.split("/")[0].parseIntValue()
-    let swaps = route.split("/")[1].split(";")
-    strict swapsResult = FOLD<3>(swaps, amountIn, doSwap)
-    accum + swapsResult
-  }
+    # get balances before making swaps, taking into account payment amount
+    func getBalances(accum: List[Int], next: String) = {
+      let balance = if (next != asset0Str) then {getBalance(next.getAssetBytes())} else {getBalance(next.getAssetBytes()) - payAmount}
+      accum :+ balance
+    }
+
+      # make routes list
+    let routes = routesStr.split_4C("|")
+
+    # get all assets used in route
+    let affectedAssetsLi = FOLD<10>(routes, [], extractAssets)
+
+    # get balances before for every used assets 
+    strict balancesBefore = FOLD<20>(affectedAssetsLi, [], getBalances)
+
+    func doSwap(amount: Int, swap: String) = {
+      let swapLi = swap.split(",")
+      let (dApp, dAppType, t0Str, t1Str) = (swapLi[0], swapLi[1], swapLi[2], swapLi[3])
+
+      let t0 = getAssetBytes(t0Str)
+      let t0Index = indexOf(affectedAssetsLi, t0Str).valueOrErrorMessage("Invalid asset d0001")
+      let t0BalanceBefore = balancesBefore[t0Index]
+      let amount0 = if( amount != 0 ) then amount else getBalance(t0) - t0BalanceBefore
+
+      strict i1 = if (dAppType == "swopfi") then {
+        invoke(Address(dApp.fromBase58String()),"exchange",[1],[AttachedPayment(t0, amount0)]) 
+      } else if (dAppType == "puzzle") then {
+        invoke(Address(dApp.fromBase58String()),"swap",[t1Str, 0],[AttachedPayment(t0, amount0)]) 
+      } else if (dAppType == "wx") then {
+        invoke(Address(base58'3P68zNiufsu1viZpu1aY3cdahRRKcvV5N93'), "swap", [1, t1Str, this.toString()], [AttachedPayment(t0, amount0)])
+        # swapWX(t0Str, t1Str, amount0)
+      } else if (dAppType == "limit") then {
+          swapLimit(dApp, t0Str, t1Str, t0BalanceBefore)
+      } else if (dAppType == "tsunami") then {
+          invoke(Address(tsnContract.fromBase58String()), "swap", [t1Str, 0], [AttachedPayment(t0, amount0)])
+      } else if (dAppType == "lend") then {
+          swapLend(dApp, t0Str, t1Str, amount0)
+      } else if (dAppType == "pepe") then {
+          swapPepe(dApp, t0Str, t1Str, amount0)
+      }
+        else {
+        throw("internal aggregator issue: unknow pool type")
+      }
+
+      0
+    }
+
+    func doRoute(accum: Int, route: String) = {
+      let amountIn = route.split("/")[0].parseIntValue()
+      let swaps = route.split("/")[1].split(";")
+      strict swapsResult = FOLD<3>(swaps, amountIn, doSwap)
+      accum + swapsResult
+    }
 
   # find asset1
   let splittedRoute = routesStr.takeRight(50).split(",")
   let asset1Str =  splittedRoute[splittedRoute.size()-1]
   let asset1 = asset1Str.getAssetBytes()
   
-  # make routes list
-  let routes = routesStr.split_4C("|")
-  
   # do swaps
   strict swaps = FOLD<4>(routes, 0, doRoute)
 
   # calc result amount
-  let totalOut = getBalance(asset1)
+  let totalOut = getBalance(asset1) - balancesBefore[indexOf(affectedAssetsLi, asset1Str).valueOrErrorMessage("Invalid asset d0002")]
   let feeAmount = fraction(totalOut, 29, 10000)
   let cleanTotalAmount = totalOut - feeAmount
 
@@ -196,8 +201,7 @@ func swapInternal(i: Invocation, routesStr: String, minToReceive: Int, refKey: S
     unit
   }
 
-  let asset0 = i.payments[0].assetId
-  let amount0 = getBalance(asset0) - if( asset0 == usdnId ) then refUsdnShare else 0
+  let amount0 = getBalance(asset0) - (if( asset0 == usdnId ) then refUsdnShare else 0) - balancesBefore[indexOf(affectedAssetsLi, asset0Str).valueOrErrorMessage("Invalid asset d0003")]
   let amount1 = cleanTotalAmount - if( asset1 == usdnId ) then refUsdnShare else 0
 
   [
