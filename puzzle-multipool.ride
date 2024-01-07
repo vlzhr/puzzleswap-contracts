@@ -2,7 +2,7 @@
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
-let VERSION = "PZ-1.0.9 PROD"
+let VERSION = "PZ-1.0.10 PROD"
 
 # may be better 
 let configStr = getString(this, "configAddress").valueOrElse("3PPEBRg4s2af2rQ2ZbLvdu1Hfd4Vo6QVDTo")
@@ -1004,7 +1004,10 @@ func stepRebalancing() = {
           IntegerEntry("static_tokensAmount", finalAssetsIdsStr.split(",").size())
         ]
       } else {
-        actions
+        let finalAssetsIdsStr = tryGetString("rebalance_assetIds")
+        let AssetsWeightsStr = FOLD<10>(finalAssetsIdsStr.split(","), [], addAssetWeightToStrList)
+
+        actions ++ [StringEntry("static_tokenWeights", makeString(AssetsWeightsStr, ","))]
       }
     }
   }
