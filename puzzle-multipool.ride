@@ -2,7 +2,7 @@
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
-let VERSION = "PZ-1.0.10 PROD"
+let VERSION = "PZ-1.0.11 PROD"
 
 # may be better 
 let configStr = getString(this, "configAddress").valueOrElse("3PPEBRg4s2af2rQ2ZbLvdu1Hfd4Vo6QVDTo")
@@ -838,6 +838,14 @@ func transferOwnership(newOwnerAddress: String) = {
   if (i.caller.toString() != tryGetString("static_poolOwner")) then {throw("this call available only for pool owner")}
   else {
     [StringEntry("static_poolOwner", newOwnerAddress)]
+  }
+}
+
+@Callable(i)
+func setFee(newFee: Int) = {
+  if (i.caller.toString() != tryGetString("static_poolOwner")) then {throw("this call available only for pool owner")}
+  else {
+    [IntegerEntry("static_fee", newFee)]
   }
 }
 
