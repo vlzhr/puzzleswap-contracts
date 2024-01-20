@@ -2,6 +2,7 @@
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
+
 func isShutdown() = {
   match getBoolean(Address(base58'3PEpv9hRFWEEBU22WRnLsw1bH4YGtcU728o'), "is_shutdown") {
     case x: Boolean => x
@@ -98,6 +99,82 @@ func unstakeIndexAndRedeemAsOneToken(indexAmount: Int, mainAddressStr: String) =
   strict eggAmount = FOLD<9>(assetIds, 0, foldHandler2)
   [
     ScriptTransfer(i.caller, eggAmount + (baseAssetAfter - baseAssetBefore), baseAssetId)
+  ]
+}
+
+# used for rex
+@Callable(i)
+func generateWithOneToken(mainAddressStr: String) = {
+  let baseAssetId = i.payments[0].assetId
+  
+  let mainAddress = Address(mainAddressStr.fromBase58String())
+  let assetIds = FOLD<10>(getStringValue(mainAddress, "static_tokenIds").split(","), [], addAssetBytesToList)
+  let secondaryAssetIds = assetIds.removeByIndex(assetIds.indexOf(baseAssetId).value())
+  let poolIndexId = getBinaryValue(mainAddress, "global_poolToken_id")
+
+  let payAmount = i.payments[0].amount
+
+  func handler(accum: List[AttachedPayment], assetId: ByteVector) = {
+    let assetIdStr = assetId.getAssetString()
+    let assetWeight = getIntegerValue(mainAddress, "static_" + assetIdStr + "_weight")
+    let amount = fraction(payAmount, assetWeight, 10000)
+    strict in = match reentrantInvoke(mainAddress, "swap", [assetId.getAssetString(), 0], [AttachedPayment(baseAssetId, amount)]) {
+          case x: Int => x
+          case _ => 0
+    }
+    accum ++ [AttachedPayment(assetId, in)]
+  }
+  
+  let returnFlag = false
+  let baseAssetWeight = getIntegerValue(mainAddress, "static_" + baseAssetId.getAssetString() + "_weight")
+  let basePayAmount = fraction(payAmount, baseAssetWeight, 10000)
+  strict exchangeInvokes = FOLD<9>(secondaryAssetIds, [AttachedPayment(baseAssetId, basePayAmount)], handler)
+  strict PIssuedAmount = match reentrantInvoke(mainAddress, "generateIndex", [returnFlag], exchangeInvokes) {
+    case x: Int => x
+    case _ => 0
+  }
+  # strict stakeInvoke = reentrantInvoke(mainAddress, "stakeIndex", [], [AttachedPayment(poolIndexId, PIssuedAmount)])
+
+  [ScriptTransfer(i.caller, PIssuedAmount, poolIndexId)]
+}
+
+# used for rex
+@Callable(i)
+func redeemWithOneToken(mainAddressStr: String, outAssetIdStr: String) = {
+  let mainAddress = Address(mainAddressStr.fromBase58String())
+  let assetIds = FOLD<10>(getStringValue(mainAddress, "static_tokenIds").split(","), [], addAssetBytesToList)
+  let baseAssetId = outAssetIdStr.getAssetBytes()
+  let secondaryAssetIds = assetIds.removeByIndex(assetIds.indexOf(baseAssetId).value())
+  let poolIndexId = getBinaryValue(mainAddress, "global_poolToken_id")
+
+  func foldHandler1(accum: List[Int], assetId: ByteVector) = {
+    accum ++ [getTokenBalance(assetId)]
+  }
+
+  let returnToOrigin = false
+  strict balancesBefore = FOLD<10>(assetIds, [], foldHandler1)
+  strict baseAssetBefore = getTokenBalance(baseAssetId)
+  strict unstakeInvoke = reentrantInvoke(mainAddress, "redeemIndex", [returnToOrigin], [i.payments[0]])
+  strict balancesAfter = FOLD<10>(assetIds, [], foldHandler1)
+  strict baseAssetAfter = getTokenBalance(baseAssetId)
+
+  func foldHandler2(accum: Int, assetId: ByteVector) = {
+    let assetNum = assetIds.indexOf(assetId).value()
+    let amount = balancesAfter[assetNum] - balancesBefore[assetNum]
+    strict in = if (assetId == baseAssetId) then {
+      amount
+    } else {
+      match reentrantInvoke(mainAddress, "swap", [baseAssetId.getAssetString(), 0], [AttachedPayment(assetId, amount)]) {
+        case x: Int => x
+        case _ => 0
+      }
+    }
+    accum + in
+  }
+
+  strict out = FOLD<10>(assetIds, 0, foldHandler2)
+  [
+    ScriptTransfer(i.caller, out, baseAssetId)
   ]
 }
 
