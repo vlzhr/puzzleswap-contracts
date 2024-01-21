@@ -9,11 +9,19 @@ let usdnId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
 let limitContract = "3PFB6LJyShsCKEA1AU1U1WLbDazqyj6ZL9b"
 let tsnContract = "3PKz5jnJLohF2GjShQ7bG5H4BebdoA98zZ2"
 let lendProxyContract = "3PGxMZtMnNT9pJCvXxXV4LzKqXsjvQ9XpfR"
+let pzPoolsL2Wrapper = "3PQoBfUKHkJAeGWhooLP7WS8ovb54av9Jp2"
 
 func tryGetString(key: String) = {
   match getString(this, key) {
     case b:String => b
     case _ => ""
+  }
+}
+
+func tryGetStringOther(key: String, address: Address) = {
+  match getString(address, key) {
+      case b:String => b
+      case _ => ""
   }
 }
 
@@ -36,35 +44,9 @@ func getBalance(assetId: ByteVector|Unit) = {
 }
 
 func swapWX(asset0: String, asset1: String, amount0: Int) = {
-  # let priceAsset = 
-  # if (asset0 == "34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ" || asset1 == "34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ") then {"34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ"}
-  # else if (asset0 == "6XtHjpXbs9RRJP2Sr9GUyVqzACcby9TkThHXnjVC5CDJ" || asset1 == "6XtHjpXbs9RRJP2Sr9GUyVqzACcby9TkThHXnjVC5CDJ") then {"6XtHjpXbs9RRJP2Sr9GUyVqzACcby9TkThHXnjVC5CDJ"}
-  # else if (asset0 == usdnIdStr || asset1 == usdnIdStr) then {usdnIdStr}   
-  # else if (asset0 == "8LQW8f7P5d5PZM7GtZEBgaqRPGSzS3DfPuiXrURJ4AJS" || asset1 == "8LQW8f7P5d5PZM7GtZEBgaqRPGSzS3DfPuiXrURJ4AJS") then {"8LQW8f7P5d5PZM7GtZEBgaqRPGSzS3DfPuiXrURJ4AJS"}
-  # else if (asset0 == "WAVES" || asset1 == "WAVES") then {"WAVES"}
-  # else {usdnIdStr}
-
-  # let factoryAddress = Address(base58'3PCuHsTU58WKhCqotbcSwABvdPzqqVAbbTv')
-  # let assetInt = getIntegerValue(factoryAddress, "%s%s%s__mappings__baseAsset2internalId__" + (if (asset1 != priceAsset) then {asset1} else {asset0})).toString()
-  # let usdnInt = getIntegerValue(factoryAddress, "%s%s%s__mappings__baseAsset2internalId__" + priceAsset).toString()
-  # let poolConfig = getStringValue(factoryAddress, "%d%d%s__" + assetInt + "__" + usdnInt + "__config").split("__")
-
-  # let poolAddress = poolConfig[1].addressFromStringValue()
-  # let poolAssetId = poolConfig[3]
-
-  # # throw(poolConfig[1])
-
-  # strict inv1 = invoke(poolAddress, "putOneTkn", [0, false], [AttachedPayment(getAssetBytes(asset0), amount0)])
-  # strict poolTokenAmount = getBalance(poolAssetId.getAssetBytes())
-
-  # strict asset1BalanceBefore = getBalance(asset1.getAssetBytes())
-  # strict inv2 = invoke(poolAddress, "getOneTkn", [asset1, 0], [AttachedPayment(getAssetBytes(poolAssetId), poolTokenAmount)])
-  # strict amount1 = getBalance(asset1.getAssetBytes()) - asset1BalanceBefore
-
   strict asset1BalanceBefore = getBalance(asset1.getAssetBytes())
   strict inv1 = invoke(Address(base58'3P68zNiufsu1viZpu1aY3cdahRRKcvV5N93'), "swap", [1, asset1, this.toString()], [AttachedPayment(asset0.getAssetBytes(), amount0)])
   strict amount1 = getBalance(asset1.getAssetBytes()) - asset1BalanceBefore
-
   amount1
 }
 
@@ -125,7 +107,16 @@ func swapInternal(i: Invocation, routesStr: String, minToReceive: Int, refKey: S
     strict i1 = if (dAppType == "swopfi") then {
       invoke(Address(dApp.fromBase58String()),"exchange",[1],[AttachedPayment(t0, amount0)]) 
     } else if (dAppType == "puzzle") then {
-      invoke(Address(dApp.fromBase58String()),"swap",[t1Str, 0],[AttachedPayment(t0, amount0)]) 
+      let pool = Address(dApp.fromBase58String())
+      let poolTokenIdBinary = getBinary(pool, "global_poolToken_id").valueOrErrorMessage("No poolToken entry in " + dApp)
+      let poolTokenIdStr = getAssetString(poolTokenIdBinary)
+      if (t0Str == poolTokenIdStr) then {
+        invoke(Address(pzPoolsL2Wrapper.fromBase58String()), "redeemWithOneToken", [dApp, t1Str], [AttachedPayment(t0, amount0)])
+      } else if (t1Str == poolTokenIdStr) then {
+        invoke(Address(pzPoolsL2Wrapper.fromBase58String()), "generateWithOneToken", [dApp], [AttachedPayment(t0, amount0)])
+      } else {
+        invoke(pool,"swap",[t1Str, 0],[AttachedPayment(t0, amount0)])
+      }
     } else if (dAppType == "wx") then {
       swapWX(t0Str, t1Str, amount0)
     } else if (dAppType == "limit") then {
