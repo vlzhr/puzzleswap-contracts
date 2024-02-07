@@ -475,7 +475,7 @@ func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: Strin
   } 
   else if (this != i.caller) then {throw("admin only")}
   else if (feeAssetStr == "") then {throw("pool must have one of the supported fee assets in the composition")}
-  else if (poolDomain.size() > 13) then {throw("too large pool domain")}
+  else if (poolDomain.size() > 16) then {throw("too large pool domain")}
   else if (fee > 500 || fee < 0) then {throw("fee value must be between 50 and 500 (0.5-5%)")}
   # TODO: check correctness of poolOwner, uniqueness of poolDomain
   else {
@@ -556,7 +556,7 @@ func init() = {
     let initialPoolTokens = calculatePoolTokensAmount(i.payments)
 
     if (initialPoolTokens == 0) then {throw("you need a bigger tokens amount to launch the pool")} else {
-      let poolTokenIssue = Issue("PZ " + tryGetString("static_poolDomain"), "Puzzle Swap: pool index token", initialPoolTokens, PoolTokenDecimals, true, unit, 0)
+      let poolTokenIssue = Issue(tryGetString("static_poolDomain"), "Puzzle Swap: pool index token", initialPoolTokens, PoolTokenDecimals, true, unit, 0)
       let poolTokenId = poolTokenIssue.calculateAssetId()
 
       prepareList() ++
