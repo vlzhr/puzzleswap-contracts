@@ -2,7 +2,7 @@
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
-let VERSION = "PZ-1.0.12 PROD"
+let VERSION = "PZ-1.0.11 PROD"
 
 # may be better 
 let configStr = getString(this, "configAddress").valueOrElse("3PPEBRg4s2af2rQ2ZbLvdu1Hfd4Vo6QVDTo")
@@ -745,7 +745,7 @@ func swap(assetOut: String, minimum: Int) = {
     let protocolFee = fraction(feeAmountOut, 4, 10)
     strict stakingTopUp = if (feeAssetOut == usdnAssetId || feeAssetOut == puzzleAssetId) then {
       reentrantInvoke(stakingAddress, "topUpReward", [], [AttachedPayment(feeAssetOut, protocolFee)])
-    } else {unit}
+    } else {0}
   
     # calculate state changes
     let newBalanceIn = AssetInBalance2
@@ -779,7 +779,7 @@ func swap(assetOut: String, minimum: Int) = {
         # update volume stats
         IntegerEntry("global_volume", tryGetInteger("global_volume") + volumeUpdate),
         IntegerEntry("global_volume_usd", tryGetInteger("global_volume_usd") + volumeUsdUpdate)
-      ] ++ if (stakingTopUp == unit) then {[
+      ] ++ if (stakingTopUp == 0) then {[
         ScriptTransfer(feesAddress, protocolFee, feeAssetOut)
       ]} else {[]}, 
       AmountOut
