@@ -2,7 +2,7 @@
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
-let VERSION = "PZ-1.0.11 PROD"
+let VERSION = "PZ-1.0.12 PROD"
 
 # may be better 
 let configStr = getString(this, "configAddress").valueOrElse("3PPEBRg4s2af2rQ2ZbLvdu1Hfd4Vo6QVDTo")
@@ -109,6 +109,7 @@ let stakingAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "staking
 let feesAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "feesAddress").valueOrElse("3P4kBiU4wr2yV1S5gMfu3MdkVvy7kxXHsKe")))
 let poolsHubAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "poolsHubAddress").valueOrElse("3P5YutjDNC3hABBVsveFuZTTbQ5PdtSDBgk")))
 let shutdownAddressStr = getString(CONFIG_ADDRESS, "shutdownAddress").valueOrElse("3PEpv9hRFWEEBU22WRnLsw1bH4YGtcU728o")
+let layer2Addresses = getString(CONFIG_ADDRESS, "layer2Addresses").valueOrElse("3PR1Qvi9mHT35SwWEkLSqqE2L8thiPLdVWU,3PQoBfUKHkJAeGWhooLP7WS8ovb54av9Jp2")
 
 
 ## GLOBAL VARIABLES ##
@@ -475,7 +476,7 @@ func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: Strin
   } 
   else if (this != i.caller) then {throw("admin only")}
   else if (feeAssetStr == "") then {throw("pool must have one of the supported fee assets in the composition")}
-  else if (poolDomain.size() > 16) then {throw("too large pool domain")}
+  else if (poolDomain.size() > 13) then {throw("too large pool domain")}
   else if (fee > 500 || fee < 0) then {throw("fee value must be between 50 and 500 (0.5-5%)")}
   # TODO: check correctness of poolOwner, uniqueness of poolDomain
   else {
@@ -556,7 +557,7 @@ func init() = {
     let initialPoolTokens = calculatePoolTokensAmount(i.payments)
 
     if (initialPoolTokens == 0) then {throw("you need a bigger tokens amount to launch the pool")} else {
-      let poolTokenIssue = Issue(tryGetString("static_poolDomain"), "Puzzle Swap: pool index token", initialPoolTokens, PoolTokenDecimals, true, unit, 0)
+      let poolTokenIssue = Issue("PZ " + tryGetString("static_poolDomain"), "Puzzle Swap: pool index token", initialPoolTokens, PoolTokenDecimals, true, unit, 0)
       let poolTokenId = poolTokenIssue.calculateAssetId()
 
       prepareList() ++
@@ -649,7 +650,13 @@ func stakeIndexFor(addressStr: String) = {
 
 @Callable(i)
 func unstakeIndex(indexAmount: Int) = {
-  let addressStr = i.originCaller.toString()
+  # unstakes for i.originCaller if used one of 2 known layer2 addresses; for i.caller otherwise
+
+  let addressStr = if (layer2Addresses.indexOf(i.caller.toString()) != unit) then {
+    i.originCaller.toString()
+  } else {
+    i.caller.toString()
+  }
 
   let indexAvailable = tryGetInteger(addressStr + "_indexStaked")
   if (isShutdown()) then {
@@ -659,7 +666,7 @@ func unstakeIndex(indexAmount: Int) = {
     throw("contract is on stop")
   } 
   else {
-    claimResult(i.originCaller)._1 ++ [
+    claimResult(addressStr.addressFromStringValue())._1 ++ [
       IntegerEntry(addressStr + "_indexStaked", indexAvailable - indexAmount),
       IntegerEntry("global_indexStaked", tryGetInteger("global_indexStaked") - indexAmount),
       ScriptTransfer(i.caller, indexAmount, getBinaryValue("global_poolToken_id"))
