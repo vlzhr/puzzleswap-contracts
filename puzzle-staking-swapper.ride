@@ -1,0 +1,39 @@
+{-# STDLIB_VERSION 6 #-}
+{-# CONTENT_TYPE DAPP #-}
+{-# SCRIPT_TYPE ACCOUNT #-}
+
+
+let usdnId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
+let usdnIdStr = "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p"
+let puzzleId = base58'HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS'
+let puzzleIdStr = "HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS"
+
+
+func tryGetInteger (key: String) = match getInteger(this, key) {
+    case b: Int => b
+    case _ => 0
+}
+
+
+@Callable(i)
+func swapAndTopupStaking() = {
+  let balance = assetBalance(this, usdnId)
+  strict inv = invoke(Address(base58'3PLPCb3wF2H2gtzohoAjeWcGaMKEiJvtE5X'), "exchangeThenInvoke", [puzzleIdStr, "3PFTbywqxtFfukX3HyT881g4iW5K4QL3FAS", "topUpReward", [], 0], [AttachedPayment(usdnId, balance)])
+  [
+    IntegerEntry("stats_lastSwap", height),
+    IntegerEntry("stats_totalSwapped_"+usdnIdStr, tryGetInteger("stats_totalSwapped_"+usdnIdStr)+balance)
+  ]
+}
+
+
+@Callable(i)
+func topupStaking() = {
+  strict inv = invoke(Address(base58'3PFTbywqxtFfukX3HyT881g4iW5K4QL3FAS'), "topUpReward", [], [AttachedPayment(puzzleId, assetBalance(this, puzzleId))])
+  [
+    IntegerEntry("stats_lastSwap", height)
+  ]
+}
+
+
+@Verifier(tx)
+func verify() = sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey)
