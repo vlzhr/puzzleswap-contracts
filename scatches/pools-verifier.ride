@@ -1,0 +1,23 @@
+{-# STDLIB_VERSION 6 #-}
+{-# CONTENT_TYPE DAPP #-}
+{-# SCRIPT_TYPE ACCOUNT #-}
+
+
+let configStr = getString(this, "configAddress").valueOrElse("3PPEBRg4s2af2rQ2ZbLvdu1Hfd4Vo6QVDTo")
+let CONFIG_ADDRESS = if (configStr == "") then {
+  this
+} else {
+  Address(fromBase58String(configStr))
+}
+
+let masterPubKey = fromBase58String(getString(CONFIG_ADDRESS, "masterPubKey").valueOrElse("4z8CKSYQBKkzx7PBb5uBP1YPa6YAHRNTApW1sQVHT5eU"))
+let coldMasterAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "coldMasterAddress").valueOrElse("ADDRESS")))
+
+
+@Verifier(tx)
+func verify() = {
+  match tx {
+    case tx: SetScriptTransaction => sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey) && getInteger(coldMasterAddress, "script_approved_" + tx.script.value().sha256().toBase58String()).valueOrElse(0) > 0
+    case _ => sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey) && getInteger(coldMasterAddress, "tx_approved_" + tx.id.toBase58String()).valueOrElse(0) > 0
+  }
+}
