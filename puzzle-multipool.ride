@@ -106,7 +106,7 @@ let masterAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "masterAd
 let masterPubKey = fromBase58String(getString(CONFIG_ADDRESS, "masterPubKey").valueOrElse("4z8CKSYQBKkzx7PBb5uBP1YPa6YAHRNTApW1sQVHT5eU")) # verifier
 let oracleAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "oracleAddress").valueOrElse("3P8d1E1BLKoD52y3bQJ1bDTd2TD1gpaLn9t")))
 let stakingAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "stakingAddress").valueOrElse("3PFTbywqxtFfukX3HyT881g4iW5K4QL3FAS")))
-let feesAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "feesAddress").valueOrElse("3P4kBiU4wr2yV1S5gMfu3MdkVvy7kxXHsKe")))
+let feesAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "feesAddress").valueOrElse("3PFWAVKmXjfHXyzJb12jCbhP4Uhi9t4uWiD")))
 let poolsHubAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "poolsHubAddress").valueOrElse("3P5YutjDNC3hABBVsveFuZTTbQ5PdtSDBgk")))
 let shutdownAddressStr = getString(CONFIG_ADDRESS, "shutdownAddress").valueOrElse("3PEpv9hRFWEEBU22WRnLsw1bH4YGtcU728o")
 let layer2Addresses = getString(CONFIG_ADDRESS, "layer2Addresses").valueOrElse("3PR1Qvi9mHT35SwWEkLSqqE2L8thiPLdVWU,3PQoBfUKHkJAeGWhooLP7WS8ovb54av9Jp2")
@@ -743,9 +743,6 @@ func swap(assetOut: String, minimum: Int) = {
     # top up protocol fee
     let creatorFee = fraction(feeAmountOut, 1, 10)
     let protocolFee = fraction(feeAmountOut, 4, 10)
-    strict stakingTopUp = if (feeAssetOut == usdnAssetId || feeAssetOut == puzzleAssetId) then {
-      reentrantInvoke(stakingAddress, "topUpReward", [], [AttachedPayment(feeAssetOut, protocolFee)])
-    } else {0}
   
     # calculate state changes
     let newBalanceIn = AssetInBalance2
@@ -779,9 +776,10 @@ func swap(assetOut: String, minimum: Int) = {
         # update volume stats
         IntegerEntry("global_volume", tryGetInteger("global_volume") + volumeUpdate),
         IntegerEntry("global_volume_usd", tryGetInteger("global_volume_usd") + volumeUsdUpdate)
-      ] ++ if (stakingTopUp == 0) then {[
+
+        # send platform fee
         ScriptTransfer(feesAddress, protocolFee, feeAssetOut)
-      ]} else {[]}, 
+      ], 
       AmountOut
     )
   }
