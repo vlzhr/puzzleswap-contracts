@@ -775,7 +775,7 @@ func swap(assetOut: String, minimum: Int) = {
 
         # update volume stats
         IntegerEntry("global_volume", tryGetInteger("global_volume") + volumeUpdate),
-        IntegerEntry("global_volume_usd", tryGetInteger("global_volume_usd") + volumeUsdUpdate)
+        IntegerEntry("global_volume_usd", tryGetInteger("global_volume_usd") + volumeUsdUpdate),
 
         # send platform fee
         ScriptTransfer(feesAddress, protocolFee, feeAssetOut)
