@@ -324,7 +324,7 @@ func calculateOutAmount(AmountIn: Int, assetIn: ByteVector|Unit, assetOut: ByteV
     fraction( BalanceOut, 
               Scale8 * Scale8 - 
 
-              pow(fraction((BalanceIn*10000).toBigInt(), (Scale8 * Scale8).toBigInt(), ((BalanceIn + AmountIn)*10000).toBigInt(), HALFUP), 
+              pow(fraction(BalanceIn.toBigInt()*10000.toBigInt(), (Scale8 * Scale8).toBigInt(), (BalanceIn + AmountIn).toBigInt()*10000.toBigInt(), HALFUP), 
                     16, 
                     fraction(AssetsWeights[IndexIn], 1_000000000000, AssetsWeights[IndexOut]).toBigInt(),
                     12,
