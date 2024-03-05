@@ -2,7 +2,7 @@
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
-let VERSION = "PZ-1.0.12 PROD"
+let VERSION = "PZ-1.0.13 PROD"
 
 # may be better 
 let configStr = getString(this, "configAddress").valueOrElse("3PPEBRg4s2af2rQ2ZbLvdu1Hfd4Vo6QVDTo")
@@ -110,6 +110,7 @@ let feesAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "feesAddres
 let poolsHubAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "poolsHubAddress").valueOrElse("3P5YutjDNC3hABBVsveFuZTTbQ5PdtSDBgk")))
 let shutdownAddressStr = getString(CONFIG_ADDRESS, "shutdownAddress").valueOrElse("3PEpv9hRFWEEBU22WRnLsw1bH4YGtcU728o")
 let layer2Addresses = getString(CONFIG_ADDRESS, "layer2Addresses").valueOrElse("3PR1Qvi9mHT35SwWEkLSqqE2L8thiPLdVWU,3PQoBfUKHkJAeGWhooLP7WS8ovb54av9Jp2")
+let govAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "govAddress").valueOrElse("3P6uro9xCsE8te78QZjzqy7aq8natSzdceC")))
 
 
 ## GLOBAL VARIABLES ##
@@ -574,17 +575,6 @@ func init() = {
   }
 }
 
-# @Callable(i)
-# func reset() = {
-#   # TODO: delete
-#   [
-#     IntegerEntry("global_poolToken_amount", 200000000),
-#     IntegerEntry("global_WAVES_balance", 400000000),
-#     IntegerEntry("global_HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS_balance", 100000000),
-#     BooleanEntry("rebalance_inProgress", false)
-#   ]
-# }
-
 @Callable(i)
 func generateIndex(needChange: Boolean) = {
   # throw("LP is closed yet")
@@ -849,6 +839,7 @@ func transferOwnership(newOwnerAddress: String) = {
 @Callable(i)
 func setFee(newFee: Int) = {
   if (i.caller.toString() != tryGetString("static_poolOwner")) then {throw("this call available only for pool owner")}
+  else if (getInteger(govAddress, "approvedTx_"+i.transactionId.toBase58String()).valueOrElse(0) < 1) then {throw("this transaction needs approval from puzzle network")}
   else {
     [IntegerEntry("static_fee", newFee)]
   }
@@ -860,6 +851,7 @@ func setRebalancingPlan(assetIdsStr: String, assetWeightsStr: String, baseTokenI
   # if new tokens are added to the pool, they need to be attached as a payment to this invoke
 
   if (i.caller != addressFromStringValue(tryGetString("static_poolOwner"))) then {throw("this call available only for pool owner")}
+  else if (getInteger(govAddress, "approvedTx_"+i.transactionId.toBase58String()).valueOrElse(0) < 1) then {throw("this transaction needs approval from puzzle network")}
   else if (getBoolean(this, "rebalance_inProgress").valueOrElse(false)) then {
     throw("rebalancing in progress")
   } else {
