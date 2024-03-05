@@ -371,7 +371,7 @@ func claimResult(address: Address) = {
   
   let accum = FOLD<10>(earnedAssets, ([], 0), handler)
   (accum._1 ++ [
-    IntegerEntry(addressStr+"_claimedRewardValue", tryGetInteger(addressStr+"_claimedRewardValue") + accum._2),
+    IntegerEntry(addressStr+"_claimedRewardUSD", tryGetInteger(addressStr+"_claimedRewardUSD") + accum._2),
     IntegerEntry(addressStr+"_lastClaim", lastBlock.timestamp)
   ], accum._2)
 }
