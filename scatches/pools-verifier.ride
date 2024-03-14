@@ -10,14 +10,21 @@ let CONFIG_ADDRESS = if (configStr == "") then {
   Address(fromBase58String(configStr))
 }
 
-let masterPubKey = fromBase58String(getString(CONFIG_ADDRESS, "masterPubKey").valueOrElse("4z8CKSYQBKkzx7PBb5uBP1YPa6YAHRNTApW1sQVHT5eU"))
-let coldMasterAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "coldMasterAddress").valueOrElse("ADDRESS")))
+# let masterPubKey = fromBase58String(getString(CONFIG_ADDRESS, "masterPubKey").valueOrElse("4z8CKSYQBKkzx7PBb5uBP1YPa6YAHRNTApW1sQVHT5eU"))
+let masterPubKey = fromBase58String(getString(CONFIG_ADDRESS, "masterPubKey").valueOrElse("CnnDwmc6cMiDbL1Hf13o5DLsBCuxzvr35FAuDcf59ER5"))
+let coldMasterAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "coldMasterAddress").valueOrElse("3PDcMJS2ceTqu6xCLdQ76ki7FMmCaWCyC9D")))
+let v = "1"
 
 
 @Verifier(tx)
 func verify() = {
   match tx {
-    case tx: SetScriptTransaction => sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey) && getInteger(coldMasterAddress, "script_approved_" + tx.script.value().sha256().toBase58String()).valueOrElse(0) > 0
-    case _ => sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey) && getInteger(coldMasterAddress, "tx_approved_" + tx.id.toBase58String()).valueOrElse(0) > 0
+    case tx: SetScriptTransaction => {
+      let scriptFull = tx.script.value()
+      let hash = scriptFull.sha256().toBase58String()
+      # throw(hash)
+      sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey) && getInteger(coldMasterAddress, "approvedScript_" + hash).valueOrElse(0) > height
+    }
+    case _ => sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey) && getInteger(coldMasterAddress, "approvedTx_" + tx.id.toBase58String()).valueOrElse(0) > 0
   }
 }
