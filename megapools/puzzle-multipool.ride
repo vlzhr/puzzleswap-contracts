@@ -2,7 +2,7 @@
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
-let VERSION = "PZ-1.0.13 PROD"
+let VERSION = "PZ-1.0.14 PROD"
 
 # may be better 
 let configStr = getString(this, "configAddress").valueOrElse("3PPEBRg4s2af2rQ2ZbLvdu1Hfd4Vo6QVDTo")
@@ -21,8 +21,7 @@ let FeeScale = 10000
 let PoolTokenDecimals = 8 # if (T > 4) then {8} else {T + 2}
 let PoolTokenScale = pow(10, 0, PoolTokenDecimals, 0, 0, HALFUP)
 
-# !!! rebalance constants 
-# TODO move to external contract's data storage
+# rebalance constants 
 let MIN_STEPS_AMOUNT = getInteger(CONFIG_ADDRESS, "min_steps_amount").valueOrElse(1)
 let MAX_STEPS_AMOUNT = getInteger(CONFIG_ADDRESS, "max_steps_amount").valueOrElse(500)
 let MIN_STEPS_INTERVAL = getInteger(CONFIG_ADDRESS, "min_steps_interval").valueOrElse(1)
@@ -125,24 +124,12 @@ let earnedAssets = assetIds
 
 ## UTIL METHODS ##
 
-# func debug(msg: String) = {
-#   if (true) then {
-#     throw(msg)
-#   } else {
-#     7
-#   }
-# }
-
 func isShutdown() = {
-  if (shutdownAddressStr == "") then {
-    false
-  } else {
-    let shutdownAddress = addressFromString(shutdownAddressStr)
-    if shutdownAddress == unit then {false} else {
-      match getBoolean(shutdownAddress.value(), "is_shutdown") {
-        case x: Boolean => x
-        case _ => false
-      }
+  let shutdownAddress = addressFromString(shutdownAddressStr)
+  if shutdownAddress == unit then {false} else {
+    match getBoolean(shutdownAddress.value(), "is_shutdown") {
+      case x: Boolean => x
+      case _ => false
     }
   }
 }
@@ -189,6 +176,7 @@ func getMinPIssued(payments: List[AttachedPayment]) = {
 }
 
 func calculateUsdnValue(assetId: ByteVector|Unit, amount: Int, aBalance: Int, givenUsdnBalance: Int|Unit) = {
+  # TODO: remove this function after frontend update
   let usdnInPool = assetIds.indexOf(usdnAssetId)
   let puzzleInPool = assetIds.indexOf(puzzleAssetId)
   let usdtInPool = assetIds.indexOf(usdtAssetId)
@@ -283,8 +271,6 @@ func handlePoolTokensAdd(PIssued: Int, payments: List[AttachedPayment], userAddr
     let a1 = fraction((PSupply + PIssued).toBigInt()*Scale8.toBigInt(), tokenDecimals.toBigInt(), PSupply.toBigInt(), CEILING)
     let Dk = fraction(a1 - tokenDecimals.toBigInt()*Scale8.toBigInt(), Bk.toBigInt(), tokenDecimals.toBigInt()*Scale8.toBigInt(), CEILING).toInt()  # deposited amount of token K
 
-
-
     let paymentAmount = getTokenPaymentAmount(tokenId)
     let toReturn = paymentAmount - Dk
 
@@ -319,7 +305,7 @@ func handlePoolTokensRedeem(PRedeemed: Int, userAddress: Address) = {
 func calculateOutAmount(AmountIn: Int, assetIn: ByteVector|Unit, assetOut: ByteVector|Unit, BalanceIn: Int, BalanceOut: Int) = {
   let IndexIn = assetIds.indexOf(assetIn).value()
   let IndexOut = assetIds.indexOf(assetOut).value()
-  if (IndexIn == IndexOut) then { AmountIn } # ???
+  if (IndexIn == IndexOut) then { AmountIn }
   else {
     fraction( BalanceOut, 
               Scale8 * Scale8 - 
@@ -387,7 +373,7 @@ func indexStakeResult(addressStr: String, amount: Int) = {
 func sum(accum: Int, n: String) = {accum + n.parseIntValue()}
 func checkFeeAsset(accum: String, next: String) = { if (supportedFeeAssetsStr.indexOf(next) != unit && accum == "") then {next} else {accum} }
 
-# !!! get union of old and new assets
+# REBALANCE: getting union of old and new assets
 func getTmpRebalanceIds(newAssetIdsLi: List[String]) = {
     let currentAssetIdsLi = tryGetString("static_tokenIds").split(",")
     let result = newAssetIdsLi
@@ -401,7 +387,7 @@ func getTmpRebalanceIds(newAssetIdsLi: List[String]) = {
     FOLD<10>(currentAssetIdsLi, result, f)
 }
 
-# !!! returns value > 0 if there are any changes between old assets and new (ignoring reordering)
+# REBALANCE: returns value > 0 if there are any changes between old assets and new (ignoring reordering)
 func checkTokensChange(newAssetIdsLi: List[String]) = {
     let currentAssetIdsLi = tryGetString("static_tokenIds").split(",")
     func rem(accum: Int, assetId: String) = {
@@ -425,7 +411,7 @@ func checkTokensChange(newAssetIdsLi: List[String]) = {
     removed + added
 }
 
-# check payments for setRebalancePlan
+# REBALANCE: check payments for setRebalancePlan
 func validatePayments(assetsList: List[String], payments: List[AttachedPayment]) = {
   # extract payment ids and check payment amount
   func getPaymentAssets(accum: List[String], next: AttachedPayment) = {
@@ -453,6 +439,7 @@ func validatePayments(assetsList: List[String], payments: List[AttachedPayment])
   a1 + a2
 }
 
+# REBALANCE
 func validateWeights(weights: List[String]) = {
   func v(accum: Int, w: String) = {
     let wInt = w.parseInt().valueOrErrorMessage("Wrong weight format: " + w)
@@ -464,6 +451,7 @@ func validateWeights(weights: List[String]) = {
 }
 
 ## CALLABLE METHODS ##
+
 @Callable(i)
 func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: String, poolDomain: String, poolOwner: String, fee: Int) = {
   let poolOwnerAddress = Address(poolOwner.fromBase58String())
@@ -779,10 +767,8 @@ func swap(assetOut: String, minimum: Int) = {
 func swapReadOnly(assetIn: String, assetOut: String, AmountIn: Int) = {
   # throw("stop")
   # markup all assets
-  
   let AssetIn = getAssetBytes(assetIn)
   let AssetOut = assetOut.getAssetBytes()
-  # let assetIn = getAssetString(AssetIn)
   let scaleIn = Scale8 / tryGetInteger("static_" + assetIn + "_scale")
   let scaleOut = Scale8 / tryGetInteger("static_" + assetOut + "_scale")
   let feeAssetOutStr = tryGetString("static_feeToken")
@@ -980,7 +966,7 @@ func stepRebalancing() = {
       if (stepsDone == 0) then { # !!! rewrite ids with union of old and new assets 
         actions ++ [StringEntry("static_tokenIds", newAssetIdsStr)]
       } else if (isFinished) then {
-        # !!! at last step remove data for removed assets and write static_tokenIds, static_tokensAmount, static_tokenWeights with final variant
+        # at last step remove data for removed assets and write static_tokenIds, static_tokensAmount, static_tokenWeights with final variant
         let removedAssetsLi = tryGetString("rebalance_removedAssets").split(",")
         func rmData(accum: List[DeleteEntry], assetId: String) = {
           accum ++ [
