@@ -2,7 +2,7 @@
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
-let VERSION = "PZ-1.2.0 PROD"
+let VERSION = "PZ-1.2.1 PROD"
 
 # may be better 
 let configStr = getString(this, "configAddress").valueOrElse("3PPEBRg4s2af2rQ2ZbLvdu1Hfd4Vo6QVDTo")
@@ -502,7 +502,8 @@ func preInit(assetIdsStr: String, assetWeightsStr: String, baseTokenIdStr: Strin
         StringEntry("static_baseTokenId", baseTokenIdStr),
         StringEntry("static_poolOwner", poolOwner),
         IntegerEntry("static_fee", fee),
-        IntegerEntry("static_KMult", Scale16)
+        IntegerEntry("static_KMult", Scale16),
+        IntegerEntry("global_wasPreInited", 1)
       ]
     }
   }
@@ -1132,13 +1133,16 @@ func doRebalancingWithNewTokens(assetIdsStr: String, assetWeightsStr: String, ba
 
 @Verifier(tx)
 func verify() = {
-  match tx {
-    case tx: SetScriptTransaction => {
-      let scriptFull = tx.script.value()
-      let hash = scriptFull.sha256().toBase58String()
-      # throw(hash)
-      sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey) && getInteger(coldMasterAddress, "approvedScript_" + hash).valueOrElse(0) > height
+  if (getInteger("global_wasPreInited").valueOrElse(0) == 0) then {
+    sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey)
+  } else {
+    match tx {
+      case tx: SetScriptTransaction => {
+        let scriptFull = tx.script.value()
+        let hash = scriptFull.sha256().toBase58String()
+        sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey) && getInteger(coldMasterAddress, "approvedScript_" + hash).valueOrElse(0) > height
+      }
+      case _ => sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey) && getInteger(coldMasterAddress, "approvedTx_" + tx.id.toBase58String()).valueOrElse(0) > 0
     }
-    case _ => sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey) && getInteger(coldMasterAddress, "approvedTx_" + tx.id.toBase58String()).valueOrElse(0) > 0
   }
 }
