@@ -18,7 +18,7 @@ let Scale = 10000
 let Scale8 = 100000000
 let Scale16 = 10000000000000000
 let FeeScale = 10000
-let PoolTokenDecimals = 8 # if (T > 4) then {8} else {T + 2}
+let PoolTokenDecimals = 8
 let PoolTokenScale = pow(10, 0, PoolTokenDecimals, 0, 0, HALFUP)
 
 # rebalance constants 
@@ -90,15 +90,18 @@ let usdnAssetIdStr = getString(CONFIG_ADDRESS, "usdnAssetIdStr").valueOrElse("DG
 let puzzleAssetIdStr = getString(CONFIG_ADDRESS, "puzzleAssetIdStr").valueOrElse("HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS")
 let usdtAssetIdStr = getString(CONFIG_ADDRESS,  "usdtAssetIdStr").valueOrElse("34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ")
 let usdtPptAssetIdStr = getString(CONFIG_ADDRESS, "usdtPptAssetIdStr").valueOrElse("9wc3LXNA4TEBsXyKtoLE9mrbDD7WMHXvXrCjZvabLAsi")
+let romeAssetIdStr = getString(CONFIG_ADDRESS, "romeAssetIdStr").valueOrElse("AP4Cb5xLYGH6ZigHreCZHoXpQTWDkPsG2BHqfDUx6taJ")
 let wavesAssetIdStr = "WAVES"
 
 let usdnAssetId = fromBase58String(usdnAssetIdStr)
 let puzzleAssetId = fromBase58String(puzzleAssetIdStr)
 let usdtAssetId = fromBase58String(usdtAssetIdStr)
 let usdtPptAssetId = fromBase58String(usdtPptAssetIdStr)
+let romeAssetId = fromBase58String(usdtPptAssetIdStr)
 let wavesAssetId = unit
 
-let supportedFeeAssetsStr = [usdnAssetIdStr, puzzleAssetIdStr, usdtAssetIdStr, usdtPptAssetIdStr, wavesAssetIdStr]
+# TODO: move to config
+let supportedFeeAssetsStr = [usdnAssetIdStr, puzzleAssetIdStr, usdtAssetIdStr, usdtPptAssetIdStr, wavesAssetIdStr, romeAssetIdStr]
 
 let parentPoolAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "parentPoolAddress").valueOrElse("3PFDgzu1UtswAkCMxqqQjbTeHaX4cMab8Kh")))
 let masterAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "masterAddress").valueOrElse("3PLjwHcz9NEuaTo63NZR9B9okQiKQxZSbmf")))
