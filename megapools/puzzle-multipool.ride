@@ -2,7 +2,7 @@
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
-let VERSION = "PZ-1.0.14 PROD"
+let VERSION = "PZ-1.2.0 PROD"
 
 # may be better 
 let configStr = getString(this, "configAddress").valueOrElse("3PPEBRg4s2af2rQ2ZbLvdu1Hfd4Vo6QVDTo")
@@ -97,7 +97,7 @@ let usdnAssetId = fromBase58String(usdnAssetIdStr)
 let puzzleAssetId = fromBase58String(puzzleAssetIdStr)
 let usdtAssetId = fromBase58String(usdtAssetIdStr)
 let usdtPptAssetId = fromBase58String(usdtPptAssetIdStr)
-let romeAssetId = fromBase58String(usdtPptAssetIdStr)
+let romeAssetId = fromBase58String(romeAssetIdStr)
 let wavesAssetId = unit
 
 # TODO: move to config
@@ -113,6 +113,7 @@ let poolsHubAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "poolsH
 let shutdownAddressStr = getString(CONFIG_ADDRESS, "shutdownAddress").valueOrElse("3PEpv9hRFWEEBU22WRnLsw1bH4YGtcU728o")
 let layer2Addresses = getString(CONFIG_ADDRESS, "layer2Addresses").valueOrElse("3PR1Qvi9mHT35SwWEkLSqqE2L8thiPLdVWU,3PQoBfUKHkJAeGWhooLP7WS8ovb54av9Jp2")
 let govAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "govAddress").valueOrElse("3P6uro9xCsE8te78QZjzqy7aq8natSzdceC")))
+let coldMasterAddress = Address(fromBase58String(getString(CONFIG_ADDRESS, "coldMasterAddress").valueOrElse("3PK9nhPfPbMBygB9ZgHVMHaQbSoojwrBfxj")))
 
 
 ## GLOBAL VARIABLES ##
@@ -1131,5 +1132,13 @@ func doRebalancingWithNewTokens(assetIdsStr: String, assetWeightsStr: String, ba
 
 @Verifier(tx)
 func verify() = {
-  sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey) || sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey)
+  match tx {
+    case tx: SetScriptTransaction => {
+      let scriptFull = tx.script.value()
+      let hash = scriptFull.sha256().toBase58String()
+      # throw(hash)
+      sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey) && getInteger(coldMasterAddress, "approvedScript_" + hash).valueOrElse(0) > height
+    }
+    case _ => sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey) && getInteger(coldMasterAddress, "approvedTx_" + tx.id.toBase58String()).valueOrElse(0) > 0
+  }
 }
