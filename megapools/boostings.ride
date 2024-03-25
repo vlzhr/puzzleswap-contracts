@@ -1,17 +1,13 @@
 {-# STDLIB_VERSION 6 #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 {-# CONTENT_TYPE DAPP #-}
-{-# IMPORT artifacts/testnet.ride #-}
+{-# IMPORT artifacts/mainnet.ride #-}
 
-let li = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33", "34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46", "47", "48", "49", "50", "51", "52", "53", "55", "56"] #, "57", "58", "59", "60", "61", "62", "63", "65", "66", "67", "68", "69", "70", "71", "72", "73", "75", "76", "77", "78", "79", "80", "81", "82", "83", "85", "86", "87", "88"] #, "89", "90", "91", "92", "93", "95", "96", "97", "98", "99", "100"]
 
-#test mode 10 minutes per day
- let hours = 1
- let minutes = 10
+let li = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33", "34", "35", "36", "37", "38"]
 
-#regular mode
-#let hours = 24
-#let minutes = 60
+let hours = 24
+let minutes = 60
 
 func tryGetInteger (key:String) = match getInteger(this, key) {
     case b: Int => 
@@ -73,12 +69,16 @@ func payBoostingResult (boostingId:String) = {
         else nil
     }
 
+let keyEnded = "list ended boostingIds"
+let listEnded = split_4C(dropRight(tryGetString(keyEnded), 1), ",")
+let keyOngoing = "list ongoing boosts boostingIds"
+
 func endedBoostingIds (boostingId:String) = {
     let lastHeight = tryGetInteger((("boosting_" + boostingId) + "_lastHeight"))
     let finishHeight = tryGetInteger((("boosting_" + boostingId) + "_finishHeight"))
     if finishHeight <= lastHeight then 
-    [StringEntry((("list ended " + toString(height)) + " boostingIds"), ((tryGetString((("list ended " + toString(height)) + " boostingIds")) + boostingId) + ","))]
-        else [StringEntry((("list ongoing boosts " + toString(height)) + " boostingIds"), ((tryGetString((("list ongoing boosts " + toString(height)) + " boostingIds")) + boostingId) + ","))]
+    [StringEntry(keyEnded, (tryGetString(((keyEnded)) + boostingId) + ","))]
+        else [StringEntry(keyOngoing, ((tryGetString(keyOngoing) + boostingId) + ","))]
     }
 
 @Callable(i)
@@ -91,18 +91,18 @@ if (false) then throw("under maintenance until further notice") else # i.caller 
     let fullAmount = i.payments[0].amount
     if fullAmount / days < 1440 then throw((("boosting amount too small, minimum is " + toString((1440 * days)) + " of the smallest unit of payment asset"))) else
         let assetId = getAssetString(i.payments[0].assetId)
-        if height == tryGetInteger("height") then throw("wait 1 minute") else
-    strict entry = if size(tryGetString(("pool_" + poolId) + "_boostings")) > 11 then throw("max 5 boosts per pool") else invoke(this, "entryEnded", [], [])
-    let boostingId = if size(("list ongoing boosts " + toString(height)) + " boostingIds") > 112 then throw("wait till other boosts are finished") else take(tryGetString(("list ended " + toString(height)) + " boostingIds"), 1)
+            let keyPoolBoostings = "pool_" + poolId + "_boostings"
+            let listPoolBoostings = split_4C(dropRight(tryGetString(keyPoolBoostings), 1), ",")
+            strict entry = if size(listPoolBoostings) > 4 then throw("max 4 boosts per pool") else invoke(this, "entryEnded", [], [])
+    let listOngoing = split_4C(dropRight(tryGetString(keyOngoing), 1), ",")
+    let boostingId = if size(listOngoing) > 38 then throw("wait till other boosts are finished") else getElement(listEnded, 0)
     if ((addressFromString(poolId) == unit))
         then throw("incorrect pool address")
         else 
         [
-        #IntegerEntry("global_boostingsAmount", boostingId), 
         IntegerEntry((("boosting_" + boostingId) + "_days"), days), 
         IntegerEntry((("boosting_" + boostingId) + "_totalAmount"), fullAmount), 
         IntegerEntry((("boosting_" + boostingId) + "_dailyAmount"), (fullAmount / days)), 
-        #IntegerEntry((("boosting_" + boostingId) + "_blockAmount"), (fullAmount / ((days * hours) * minutes))), 
         IntegerEntry((("boosting_" + boostingId) + "_startHeight"), height), 
         IntegerEntry((("boosting_" + boostingId) + "_finishHeight"), (height + ((days * hours) * minutes))), 
         IntegerEntry((("boosting_" + boostingId) + "_finishTimestamp"), (lastBlock.timestamp + ((((days * hours) * minutes) * 60) * 1000))), 
@@ -126,7 +126,7 @@ func payBoostings () = {
             else throw("Strict value is not equal to itself.")
         }
     let payments = { 
-        FOLD<56>(li, 0, f)
+        FOLD<38>(li, 0, f)
         }
     if ((payments == payments))
         then nil
@@ -145,9 +145,9 @@ func entryEnded () = {
             else throw("Strict value is not equal to itself.")
         }
     let end = { 
-        FOLD<56>(li, 0, f)
+        FOLD<38>(li, 0, f)
         }
     if ((end == end))
-        then [IntegerEntry("height", height)]
+        then []
         else throw("Strict value is not equal to itself.")
     }
