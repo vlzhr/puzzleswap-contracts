@@ -2,7 +2,7 @@
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
-let VERSION = "PZ-1.2.1 PROD"
+let VERSION = "PZ-1.2.2 PROD"
 
 # may be better 
 let configStr = getString(this, "configAddress").valueOrElse("3PPEBRg4s2af2rQ2ZbLvdu1Hfd4Vo6QVDTo")
@@ -1134,7 +1134,7 @@ func doRebalancingWithNewTokens(assetIdsStr: String, assetWeightsStr: String, ba
 @Verifier(tx)
 func verify() = {
   if (getInteger("global_wasPreInited").valueOrElse(0) == 0) then {
-    sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey)
+    sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey) || sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey)
   } else {
     match tx {
       case tx: SetScriptTransaction => {
