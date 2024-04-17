@@ -1133,8 +1133,11 @@ func doRebalancingWithNewTokens(assetIdsStr: String, assetWeightsStr: String, ba
 
 @Verifier(tx)
 func verify() = {
-  if (getInteger("global_wasPreInited").valueOrElse(0) == 0) then {
+  if (
+    getInteger("global_wasPreInited").valueOrElse(0) == 0 && (
     sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey) || sigVerify(tx.bodyBytes, tx.proofs[0], masterPubKey)
+  )) then {
+    true
   } else {
     match tx {
       case tx: SetScriptTransaction => {
