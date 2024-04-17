@@ -1,7 +1,7 @@
 {-# STDLIB_VERSION 6 #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 {-# CONTENT_TYPE DAPP #-}
-# {-# IMPORT artifacts/testnet.ride #-}
+
 
 let li = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33", "34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46", "47", "48", "49", "50", "51", "52", "53", "55", "56"] #, "57", "58", "59", "60", "61", "62", "63", "65", "66", "67", "68", "69", "70", "71", "72", "73", "75", "76", "77", "78", "79", "80", "81", "82", "83", "85", "86", "87", "88"] #, "89", "90", "91", "92", "93", "95", "96", "97", "98", "99", "100"]
 
@@ -71,39 +71,33 @@ func payBoostingResult (boostingId:String) = {
 
 
 @Callable(i)
-func addBoosting (poolId:String, days:Int) = {
+func addBoosting (poolId: String, days: Int) = {
+    let fullAmount = i.payments[0].amount
+
     if (days < 1) then throw("amount of days has to be between 1 and 365") 
     else if (days> 365) then throw("amount of days has to be between 1 and 365") 
+    else if (fullAmount / days < 1440) then throw((("boosting amount too small, minimum is " + toString((1440 * days)) + " of the smallest unit of payment asset")))
+    else if ((addressFromString(poolId) == unit)) then throw("incorrect pool address")
     else {
-        let fullAmount = i.payments[0].amount
-        if fullAmount / days < 1440 then throw((("boosting amount too small, minimum is " + toString((1440 * days)) + " of the smallest unit of payment asset")))
-        else {
-            let assetId = getAssetString(i.payments[0].assetId)
-            let poolBoostings = tryGetString("pool_" + poolId + "_boostings").split(",")
+        let assetId = getAssetString(i.payments[0].assetId)
+        let poolBoostings = tryGetString("pool_" + poolId + "_boostings").split(",")
 
-            if (height == tryGetInteger("height")) then throw("wait 1 minute") # why?
-            else {
-                strict entry = if (size(poolBoostings) >= 5) then throw("max 5 boosts per pool") else invoke(this, "entryEnded", [], [])
-                let boostingId = if size(("list ongoing boosts " + toString(height)) + " boostingIds") > 112 then throw("wait till other boosts are finished") else take(tryGetString(("list ended " + toString(height)) + " boostingIds"), 1)
-                if ((addressFromString(poolId) == unit))
-                    then throw("incorrect pool address")
-                    else 
-                    [
-                        IntegerEntry((("boosting_" + boostingId) + "_days"), days), 
-                        IntegerEntry((("boosting_" + boostingId) + "_totalAmount"), fullAmount), 
-                        IntegerEntry((("boosting_" + boostingId) + "_dailyAmount"), (fullAmount / days)), 
-                        #IntegerEntry((("boosting_" + boostingId) + "_blockAmount"), (fullAmount / ((days * hours) * minutes))), 
-                        IntegerEntry((("boosting_" + boostingId) + "_startHeight"), height), 
-                        IntegerEntry((("boosting_" + boostingId) + "_finishHeight"), (height + ((days * hours) * minutes))), 
-                        IntegerEntry((("boosting_" + boostingId) + "_finishTimestamp"), (lastBlock.timestamp + ((((days * hours) * minutes) * 60) * 1000))), 
-                        IntegerEntry((("boosting_" + boostingId) + "_lastHeight"), height), 
-                        StringEntry((("boosting_" + boostingId) + "_assetId"), assetId), 
-                        StringEntry((("boosting_" + boostingId) + "_owner"), toString(i.caller)), 
-                        StringEntry((("boosting_" + boostingId) + "_poolId"), poolId), 
-                        StringEntry((("pool_" + poolId) + "_boostings"), ((tryGetString((("pool_" + poolId) + "_boostings")) + boostingId) + ","))
-                    ]
-            }
-        }
+        strict entry = if (size(poolBoostings) >= 5) then throw("max 5 boosts per pool") else invoke(this, "entryEnded", [], [])
+        let boostingId = if size(("list ongoing boosts " + toString(height)) + " boostingIds") > 112 then throw("wait till other boosts are finished") else take(tryGetString(("list ended " + toString(height)) + " boostingIds"), 1)
+        [
+            IntegerEntry("boosting_" + boostingId + "_days", days), 
+            IntegerEntry("boosting_" + boostingId + "_totalAmount", fullAmount), 
+            IntegerEntry("boosting_" + boostingId + "_dailyAmount", (fullAmount / days)), 
+            #IntegerEntry((("boosting_" + boostingId) + "_blockAmount"), (fullAmount / ((days * hours) * minutes))), 
+            IntegerEntry("boosting_" + boostingId + "_startHeight", height), 
+            IntegerEntry("boosting_" + boostingId + "_finishHeight", (height + ((days * hours) * minutes))), 
+            IntegerEntry("boosting_" + boostingId + "_finishTimestamp", (lastBlock.timestamp + ((((days * hours) * minutes) * 60) * 1000))), 
+            IntegerEntry("boosting_" + boostingId + "_lastHeight", height), 
+            StringEntry("boosting_" + boostingId + "_assetId", assetId), 
+            StringEntry("boosting_" + boostingId + "_owner", toString(i.caller)), 
+            StringEntry("boosting_" + boostingId + "_poolId", poolId), 
+            StringEntry("pool_" + poolId + "_boostings", ((tryGetString((("pool_" + poolId) + "_boostings")) + boostingId) + ","))
+        ]
     }
 }
 
