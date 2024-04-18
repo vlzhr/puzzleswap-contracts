@@ -2,7 +2,6 @@
 {-# SCRIPT_TYPE ACCOUNT #-}
 {-# CONTENT_TYPE DAPP #-}
 
-
 let hours = 24
 let minutes = 60
 
@@ -25,12 +24,12 @@ func getAssetBytes (assetIdStr:String) = if (assetIdStr == "WAVES") then unit el
 
 
 func payBoostingResult (boostingId:String) = {
-    let lastHeight = tryGetInteger((("boosting_" + boostingId) + "_lastHeight"))
-    let finishHeight = tryGetInteger((("boosting_" + boostingId) + "_finishHeight"))
+    let lastHeight = tryGetInteger("boosting_" + boostingId + "_lastHeight")
+    let finishHeight = tryGetInteger("boosting_" + boostingId + "_finishHeight")
 
     if (lastHeight != 0 && finishHeight > lastHeight) then {
-        let blockReward = tryGetInteger((("boosting_" + boostingId) + "_totalAmount")) / ((tryGetInteger(("boosting_" + boostingId) + "_days") * hours * minutes))
-        let toPay = fraction((min([finishHeight, height]) - lastHeight), blockReward, 1)  
+        let blockReward = tryGetInteger("boosting_" + boostingId + "_totalAmount") / (tryGetInteger("boosting_" + boostingId + "_days") * hours * minutes)
+        let toPay = fraction(min([finishHeight, height]) - lastHeight, blockReward, 1)  
 
         [
             IntegerEntry("boosting_" + boostingId + "_lastHeight", height), 
@@ -46,9 +45,9 @@ func addBoosting (poolId: String, days: Int) = {
     let fullAmount = i.payments[0].amount
 
     if (days < 1) then throw("amount of days has to be between 1 and 365") 
-    else if (days> 365) then throw("amount of days has to be between 1 and 365") 
+    else if (days > 365) then throw("amount of days has to be between 1 and 365") 
     else if (fullAmount / days < 1440) then throw((("boosting amount too small, minimum is " + toString((1440 * days)) + " of the smallest unit of payment asset")))
-    else if ((addressFromString(poolId) == unit)) then throw("incorrect pool address")
+    else if (addressFromString(poolId) == unit) then throw("incorrect pool address")
     else {
         let assetId = getAssetString(i.payments[0].assetId)
         let poolBoostings = tryGetString("pool_" + poolId + "_boostings").split(",")
@@ -67,7 +66,7 @@ func addBoosting (poolId: String, days: Int) = {
             StringEntry("boosting_" + boostingId + "_assetId", assetId), 
             StringEntry("boosting_" + boostingId + "_owner", toString(i.caller)), 
             StringEntry("boosting_" + boostingId + "_poolId", poolId), 
-            StringEntry("pool_" + poolId + "_boostings", tryGetString("pool_" + poolId + "_boostings" + boostingId + ","))
+            StringEntry("pool_" + poolId + "_boostings", tryGetString("pool_" + poolId + "_boostings") + boostingId + ",")
         ]
     }
 }
@@ -75,12 +74,12 @@ func addBoosting (poolId: String, days: Int) = {
 
 @Callable(i)
 func polishFinishedBoostings(poolId: String) = {
-    func checkNextBoosting(accum: String, boostingId: String) = {
-        if (boostingId == "") then accum 
+    func checkNextBoosting(accum: List[String], boostingId: String) = {
+        if (boostingId == "") || (accum.indexOf(boostingId) != unit) then accum 
         else {
             let finishHeight = tryGetInteger("boosting_" + boostingId + "_finishHeight")
-            if (finishHeight < height) then {
-                accum + boostingId + ","
+            if (finishHeight > height) then {
+                accum ++ [boostingId]
             } else {
                 accum
             }
@@ -88,10 +87,10 @@ func polishFinishedBoostings(poolId: String) = {
     }
 
     let currentBoostings = tryGetString("pool_" + poolId + "_boostings").split_51C(",")
-    let newBoostings = FOLD<25>(currentBoostings, "", checkNextBoosting)
+    let newBoostings = (FOLD<25>(currentBoostings, [], checkNextBoosting)).makeString_11C(",") + ","
     
     [
-        if newBoostings == "" then DeleteEntry("pool_" + poolId + "_boostings") else StringEntry("pool_" + poolId + "_boostings", newBoostings)
+        if newBoostings == "," then DeleteEntry("pool_" + poolId + "_boostings") else StringEntry("pool_" + poolId + "_boostings", newBoostings)
     ]
 }
 
@@ -102,17 +101,16 @@ func payBoosting(boostingId:String) = {
 }
 
 
-
 @Callable(i)
 func payPoolBoostings(poolId:String) = {
-    func f (accum: Int, boostingId: String) = {payBoostingResult(boostingId)}
+    func f (accum: List[ScriptTransfer|IntegerEntry], boostingId: String) = {accum ++ payBoostingResult(boostingId)}
 
     let boostings = tryGetString("pool_" + poolId + "_boostings").split_51C(",")
-    strict payments = FOLD<25>(boostings, 0, f)
+    strict payments = FOLD<25>(boostings, [], f)
 
     strict inv = invoke(this, "polishFinishedBoostings", [poolId], [])
 
-    []
+    payments
 }
 
 
