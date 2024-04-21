@@ -1,0 +1,71 @@
+{-# STDLIB_VERSION 6 #-}
+{-# CONTENT_TYPE DAPP #-}
+{-# SCRIPT_TYPE ACCOUNT #-}
+
+
+let delegates = getString(this, "setup_delegates").valueOrElse("3PMcMiMEs6w56NRGacksXtFG5zS7doE9fpL")
+
+
+@Callable(i)
+func requestRebalancing(rebId: String) = {
+  let poolStr = i.caller.toString()
+
+  if (getInteger(this, "rebalancing_status_" + rebId) == unit) then {throw("rebalancing already exists")}
+  else {
+    [
+      StringEntry("pool_lastRebalancing_" + poolStr, rebId),
+      IntegerEntry("rebalancing_status_" + rebId, 1)
+    ]
+  }
+}
+
+
+@Callable(i)
+func approveRebalancing(rebId: String) = {
+  if (delegates.indexOf(i.caller.toString()) == unit) then {throw("available only for delegates")}
+  else {
+    [
+      IntegerEntry("rebalancing_status_" + rebId, 2)
+    ]
+  }
+}
+
+
+@Callable(i)
+func declineRebalancing(rebId: String) = {
+  if (delegates.indexOf(i.caller.toString()) == unit) then {throw("available only for delegates")}
+  else {
+    [
+      IntegerEntry("rebalancing_status_" + rebId, 0)
+    ]
+  }
+}
+
+
+@Callable(i)
+func notifyRebalancingDone(rebId: String) = {
+  let poolStr = i.caller.toString()
+
+  if (getInteger(this, "rebalancing_status_" + rebId) != 2) then {throw("rebalancing is not in process")}
+  else if (getString(this, "pool_lastRebalancing_" + poolStr) != rebId) then {throw("this pool doesn't run rebalancing")}
+  else {
+    [
+      IntegerEntry("rebalancing_status_" + rebId, 3)
+    ]
+  }
+}
+
+
+@Callable(i)
+func addDelegate(address: String) = {
+  if (i.caller != this) then {throw("available only for self invocation")}
+  else {
+    [
+      StringEntry("setup_delegates", delegates + "," + address)
+    ]
+  }
+}
+
+
+@Verifier(tx)
+func verify() = sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey)
