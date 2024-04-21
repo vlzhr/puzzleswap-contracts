@@ -2,7 +2,7 @@
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
-let VERSION = "PZ-1.2.2 PROD"
+let VERSION = "PZ-1.2.3 PROD"
 
 # may be better 
 let configStr = getString(this, "configAddress").valueOrElse("3PPEBRg4s2af2rQ2ZbLvdu1Hfd4Vo6QVDTo")
@@ -842,7 +842,6 @@ func setRebalancingPlan(assetIdsStr: String, assetWeightsStr: String, baseTokenI
   # if new tokens are added to the pool, they need to be attached as a payment to this invoke
 
   if (i.caller != addressFromStringValue(tryGetString("static_poolOwner"))) then {throw("this call available only for pool owner")}
-  else if (getInteger(govAddress, "approvedTx_"+i.transactionId.toBase58String()).valueOrElse(0) < 1) then {throw("this transaction needs approval from puzzle network")}
   else if (getBoolean(this, "rebalance_inProgress").valueOrElse(false)) then {
     throw("rebalancing in progress")
   } else {
@@ -900,7 +899,8 @@ func setRebalancingPlan(assetIdsStr: String, assetWeightsStr: String, baseTokenI
         let paymentEntries = FOLD<10>(i.payments, [], recordAssetPayment)
         let storeWeights = saveCurrentWeights() # !!! save start weights to remove deltas rounding error accumulation
 
-        strict notifyInvoke = invoke(poolsHubAddress, "notifyPoolChange", [], [])
+        # strict notifyInvoke = invoke(poolsHubAddress, "notifyPoolChange", [], [])
+        strict requestGovInvoke = invoke(govAddress, "requestRebalancing", [i.transactionId.toBase58String()], [])
 
         [
           StringEntry("rebalance_addedAssets", makeString(addedAssets, ",")),
@@ -928,9 +928,13 @@ func stepRebalancing() = {
   # can be invoked by anyone once in a stepsInterval blocks
   # is used to perform the smooth rebalancing
 
+  let rebId = getString(govAddress, "pool_lastRebalancing_" + this.toString()).valueOrErrorMessage("rebalancing is not registered at gov address")
+
   if (!getBoolean(this, "rebalance_inProgress").valueOrElse(false)) then {
     throw("no rebalancing in progress")
-  } else {
+  } 
+  else if (getInteger(govAddress, "rebalancing_status_"+rebId).valueOrElse(0) != 2) then {throw("this transaction needs approval from puzzle network")}
+  else {
     let lastStepHeight = getIntegerValue("rebalance_lastStepHeight")
     let stepInterval = getIntegerValue("rebalance_stepsInterval")
     let stepsDone = getIntegerValue("rebalance_stepsDone")
@@ -994,6 +998,9 @@ func stepRebalancing() = {
 
         let finalAssetsIdsStr = tryGetString("rebalance_assetIds")
         let AssetsWeightsStr = FOLD<10>(finalAssetsIdsStr.split(","), [], addAssetWeightToStrList)
+
+        strict notify = invoke(govAddress, "notifyRebalancingDone", [rebId], [])
+
         actions ++ rm ++ rmPayments ++ [
           StringEntry("static_tokenIds", finalAssetsIdsStr),
           StringEntry("static_tokenWeights", makeString(AssetsWeightsStr, ",")),
