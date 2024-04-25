@@ -43,16 +43,16 @@ func payBoostingResult (boostingId:String) = {
 @Callable(i)
 func addBoosting (poolId: String, days: Int) = {
     let fullAmount = i.payments[0].amount
+    let assetId = getAssetString(i.payments[0].assetId)
+    let boostingId = sha256((i.transactionId.toBase58String() + assetId + poolId).fromBase58String()).toBase58String()
 
     if (days < 1) then throw("amount of days has to be between 1 and 365") 
     else if (days > 365) then throw("amount of days has to be between 1 and 365") 
+    else if (tryGetInteger("boosting_" + boostingId + "_days") != 0) then throw("split addBoosting calls to multiple invokes")
     else if (fullAmount / days < 1440) then throw((("boosting amount too small, minimum is " + toString((1440 * days)) + " of the smallest unit of payment asset")))
     else if (addressFromString(poolId) == unit) then throw("incorrect pool address")
     else {
-        let assetId = getAssetString(i.payments[0].assetId)
         let poolBoostings = tryGetString("pool_" + poolId + "_boostings").split(",")
-
-        let boostingId = i.transactionId.toBase58String()
 
         [
             IntegerEntry("boosting_" + boostingId + "_days", days), 
