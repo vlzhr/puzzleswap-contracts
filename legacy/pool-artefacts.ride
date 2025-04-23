@@ -4,9 +4,7 @@
 {-# IMPORT artifacts/mainnet.ride #-}
 
 
-let puzzleAssetId = base58'HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS'
-let usdnAssetId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
-let puzzlePoolAddress = base58'3PFDgzu1UtswAkCMxqqQjbTeHaX4cMab8Kh'
+let puzzleAssetId = base58'AAC4GKXW6F49NrohKwcpTd9EtV6PoN7QW5RvXKhq2Qti'
 let nftCreationAddress = base58'3PFQjjDMiZKQZdu5JqTHD7HwgSXyp9Rw9By'
 let eagleHolderAddress = base58'3PKUxbZaSYfsR7wu2HaAgiirHYwAMupDrYW'
 let artefacts = [["Puzzle Surf", "Puzzle Surf artefact can be used to launch a custom pool on Puzzle Swap (PuzzleSwap.org).", "https://ipfs.io/ipfs/QmUawQhPVhPitBSRtgd6ZKurseYJ3QWYUhYmV23PS2qL4Y"], ["Puzzle Desert", "Puzzle Desert artefact can be used to launch a custom pool on Puzzle Swap (PuzzleSwap.org).", "https://ipfs.io/ipfs/Qma7Beh9pPkRhgK6WNMQKLHahQDKeKRp5myjv2mx1zv1zm"], ["Puzzle Airplane", "Puzzle Airplane artefact can be used to launch a custom pool on Puzzle Swap (PuzzleSwap.org).", "https://ipfs.io/ipfs/QmNTzzdvBx658hiCVvHNGS4FsRk8ZhAgYwezH6Q9QEKy7K"], ["Puzzle Wheel", "Puzzle Wheel artefact can be used to launch a custom pool on Puzzle Swap (PuzzleSwap.org).", "https://ipfs.io/ipfs/QmTvN5sAC2ka4qtLjSd2vWQ4NqYJD8Qo8cJiChd8QjYNC5"], ["Puzzle Khalifa", "Puzzle Khalifa artefact can be used to launch a custom pool on Puzzle Swap (PuzzleSwap.org).", "https://ipfs.io/ipfs/QmckDMscnuYp8shr3NxqbeDJ82V6c1UvWP1ecPAfMkSv2D"]]
@@ -41,16 +39,9 @@ func isEagleHolder(address: String) = match getInteger(Address(eagleHolderAddres
     case _ => false
 }
 
-func getPuzzlePrice() = {
-    let usdnBalance = getIntegerValue(Address(puzzlePoolAddress), (("global_" + toBase58String(usdnAssetId)) + "_balance"))
-    let puzzleBalance = getIntegerValue(Address(puzzlePoolAddress), (("global_" + toBase58String(puzzleAssetId)) + "_balance"))
-    let puzzlePart = fraction(puzzleBalance, 1, 8)
-    fraction(usdnBalance, 1000000, fraction(puzzlePart, 1, 100))
-}
-
 func getArtefactUsdnPrice() = (400000000 + (getIntegerData(totalCount_DataKey) * 1000000))
 
-func deltaUsdnSum(puzzleAmount: Int, puzzlePriceUsdn: Int, isEagleHolder: Boolean) = {
+func deltaUsdnSum(puzzleAmount: Int, isEagleHolder: Boolean) = {
     let artefactUsdnPrice = if (isEagleHolder)
         then {
             let price = 2000000000
@@ -67,8 +58,7 @@ func generateArtefact () = if (if (if ((size(i.payments) == 1))
     then (i.payments[0].amount > 0)
     else false)
     then {
-        let puzzlePriceUsdn = getPuzzlePrice()
-        let paymentUsdnDelta = deltaUsdnSum(i.payments[0].amount, puzzlePriceUsdn, isEagleHolder(toString(i.caller)))
+        let paymentUsdnDelta = deltaUsdnSum(i.payments[0].amount, isEagleHolder(toString(i.caller)))
         if ((paymentUsdnDelta >= 0))
             then {
                 let randIndex = getRandomNumber(5, i.transactionId, height, 0)
