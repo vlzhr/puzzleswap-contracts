@@ -106,7 +106,7 @@ func swapInternal(i: Invocation, routesStr: String, minToReceive: Int, refKey: S
 
     strict i1 = if (dAppType == "swopfi") then {
       invoke(Address(dApp.fromBase58String()),"exchange",[1],[AttachedPayment(t0, amount0)]) 
-    } else if (dAppType == "puzzle") then {
+    } else if (dAppType == "puzzle" || dAppType == "pz_ranged") then {
       let pool = Address(dApp.fromBase58String())
       let poolTokenIdBinary = getBinary(pool, "global_poolToken_id").valueOrErrorMessage("No poolToken entry in " + dApp)
       let poolTokenIdStr = getAssetString(poolTokenIdBinary)
