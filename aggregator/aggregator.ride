@@ -1,7 +1,7 @@
 {-# STDLIB_VERSION 6 #-}
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
-
+{-# IMPORT artifacts/mainnet.ride #-}
 
 
 let usdnIdStr = "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p"
@@ -10,6 +10,8 @@ let limitContract = "3PFB6LJyShsCKEA1AU1U1WLbDazqyj6ZL9b"
 let tsnContract = "3PKz5jnJLohF2GjShQ7bG5H4BebdoA98zZ2"
 let lendProxyContract = "3PGxMZtMnNT9pJCvXxXV4LzKqXsjvQ9XpfR"
 let pzPoolsL2Wrapper = "3PQoBfUKHkJAeGWhooLP7WS8ovb54av9Jp2"
+
+let managers = [Address(base58'3PMcMiMEs6w56NRGacksXtFG5zS7doE9fpL'), Address(base58'3PMKAL4cd77onkYuuU35115Wov1sLMEcFsv'), Address(base58'3P9xX849YJXg7C87v82cDyDy5VhKiPJpHo8')]
 
 func tryGetString(key: String) = {
   match getString(this, key) {
@@ -221,7 +223,7 @@ func swapWithReferral(routesStr: String, minToReceive: Int, refKey: String) = {
 
 @Callable(i)
 func addTokenPuzzlePool(assetIdStr: String, poolAddressStr: String) = {
-  if (i.caller != Address(base58'3PMcMiMEs6w56NRGacksXtFG5zS7doE9fpL')) then {throw("admin only")}
+  if (managers.indexOf(i.caller) == unit) then {throw("admin only")}
   else {
     [
       StringEntry("static_asset_"+assetIdStr+"_puzzlePool", poolAddressStr)
@@ -231,7 +233,7 @@ func addTokenPuzzlePool(assetIdStr: String, poolAddressStr: String) = {
 
 @Callable(i)
 func addReferralKey(refKey: String, addressStr: String) = {
-  if (i.caller != Address(base58'3PMcMiMEs6w56NRGacksXtFG5zS7doE9fpL')) then {throw("admin only")}
+  if (managers.indexOf(i.caller) == unit) then {throw("admin only")}
   else {
     [
       StringEntry("ref_"+refKey, addressStr)
