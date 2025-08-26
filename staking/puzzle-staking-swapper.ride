@@ -2,18 +2,23 @@
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
+let d8 = 100000000
 
 let usdnId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
 let usdnIdStr = "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p"
 let puzzleId = base58'HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS'
 let puzzleIdStr = "HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS"
+let usdtId = base58'34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ'
+let usdtPptId = base58'9wc3LXNA4TEBsXyKtoLE9mrbDD7WMHXvXrCjZvabLAsi'
 
+let wavesDefiPool = base58'3PDrYPF6izza2sXWffzTPF7e2Fcir2CMpki'
+let puzzleBasis = base58'3PQAhPM5iHQyYrAqTVts53UgiLGtVuSZ8xD'
+let burnxtnPPT = base58'3PQHndCUVrv3wBuQjbvVP9SnGmfbfitGxfx'
 
 func tryGetInteger (key: String) = match getInteger(this, key) {
     case b: Int => b
     case _ => 0
 }
-
 
 @Callable(i)
 func swapAndTopupStaking() = {
@@ -25,15 +30,18 @@ func swapAndTopupStaking() = {
   ]
 }
 
-
 @Callable(i)
 func topupStaking() = {
+  strict usdtwxg = invoke(Address(wavesDefiPool), "swap", [puzzleIdStr,0], [AttachedPayment(usdtId,assetBalance(this, usdtId))])
+  strict usdtppt = invoke(Address(burnxtnPPT), "swap", ["WAVES",0], [AttachedPayment(usdtPptId,assetBalance(this, usdtPptId))])
+  strict swapwaves = invoke(Address(puzzleBasis), "swap", [puzzleIdStr,0], [AttachedPayment(unit,if wavesBalance(this).available - d8 > 0
+    then wavesBalance(this).available - d8
+    else 0)])
   strict inv = invoke(Address(base58'3PFTbywqxtFfukX3HyT881g4iW5K4QL3FAS'), "topUpReward", [], [AttachedPayment(puzzleId, assetBalance(this, puzzleId))])
   [
     IntegerEntry("stats_lastSwap", height)
   ]
 }
-
 
 @Verifier(tx)
 func verify() = sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey)
