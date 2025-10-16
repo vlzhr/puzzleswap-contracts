@@ -1,7 +1,7 @@
 {-# STDLIB_VERSION 6 #-}
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
-{-# IMPORT artifacts/mainnet.ride #-}
+
 
 
 let usdnIdStr = "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p"
@@ -55,8 +55,11 @@ func swapWX(asset0: String, asset1: String, amount0: Int) = {
 func swapLimit(params: String, t0Str: String, t1Str: String) = {
     func doLimit(asset: ByteVector|Unit, orderParams: String) = {
         let ord = orderParams.split(">")
-        let (orderId, orderAmount) = (ord[0], ord[1])
-        strict inv = invoke(Address(limitContract.fromBase58String()),"fulfillOrder",[orderId],[AttachedPayment(asset, orderAmount.parseIntValue())]) 
+        let (orderId, orderAmountStr) = (ord[0], ord[1])
+        let _orderAmount = orderAmountStr.parseIntValue()
+        strict assetBal = getBalance(asset)
+        let orderAmount = if (assetBal < _orderAmount) then assetBal else _orderAmount
+        strict inv = invoke(Address(limitContract.fromBase58String()),"fulfillOrder",[orderId],[AttachedPayment(asset, orderAmount)]) 
         asset
     }
     let ordersLi = params.split(":")
@@ -171,10 +174,14 @@ func swapInternal(i: Invocation, routesStr: String, minToReceive: Int, refKey: S
     let poolAddressStr = tryGetString("static_asset_"+asset1Str+"_puzzlePool")
     if (poolAddressStr == "") then {0} else {
       strict usdnBalanceBefore = getBalance(usdnId)
-      strict convertedFee = invoke(addressFromStringValue(poolAddressStr),"swap",[usdnIdStr,0],[AttachedPayment(asset1, feeAmount)])
-      strict usdnBalanceAfter = getBalance(usdnId)
-
-      usdnBalanceAfter - usdnBalanceBefore
+      let convertedFeeEmul = invoke(addressFromStringValue(poolAddressStr),"swapReadOnly",[asset1Str, usdnIdStr,feeAmount],[])
+      if (convertedFeeEmul != 0) then {
+        strict convertedFee = invoke(addressFromStringValue(poolAddressStr),"swap",[usdnIdStr,0],[AttachedPayment(asset1, feeAmount)])
+        strict usdnBalanceAfter = getBalance(usdnId)
+        usdnBalanceAfter - usdnBalanceBefore
+      } else {
+        0
+      }
     }
   }
 
