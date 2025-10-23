@@ -1,119 +1,205 @@
 {-# STDLIB_VERSION 6 #-}
-{-# SCRIPT_TYPE ACCOUNT #-}
 {-# CONTENT_TYPE DAPP #-}
+{-# SCRIPT_TYPE ACCOUNT #-}
 
-let usdnId = base58'DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p'
-let usdnIdStr = "DG2xFkPdDwKUoBkzGAhQtLpSGzfXLiCYPEzeKH2Ad24p"
-let puzzleId = base58'HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS'
+let VERSION = "stPUZZLE-1.4.0"
+
+let Scale8 = 100000000
+let Scale6 = 1000000
+let Fee = 100000 # in Scale8
+
 let puzzleIdStr = "HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS"
+let puzzleId = base58'HEB8Qaw9xrWpWs8tHsiATYGBWDBtP2S7kcPALrMu43AS'
+let stakingAddress = Address(base58'3PFTbywqxtFfukX3HyT881g4iW5K4QL3FAS')
+let maxLPCap = getInteger("setup_maxLPCap").valueOrElse(20000 * Scale8)
 
-let Scale = 1000000000000
-
-func tryGetInteger (key: String) = match getInteger(this, key) {
-    case b: Int => 
-        b
-    case _ => 
-        0
+func getAssetString(assetId: ByteVector|Unit) = {
+  match assetId {
+    case b:ByteVector => b.toBase58String()
+    case _ => "WAVES"
+  }
 }
 
-
-func tryGetString (key: String) = match getString(this, key) {
-    case a: String => 
-        a
-    case _ => 
-        ""
+func getAssetBytes(assetIdStr: String) = {
+  if (assetIdStr == "WAVES") then {unit} else {assetIdStr.fromBase58String()}
 }
 
-func claimAliasResult (address: Address, assetIdStr: String) = {
-    let addressStr = toString(address)
-    let currentInterest = tryGetInteger("global_lastCheck_" + assetIdStr + "_interest")
-    let stakedAmount = tryGetInteger(addressStr + "_staked")
+func getBalance(assetIdStr: String) = {
+  if (assetIdStr == "WAVES") then {wavesBalance(this).available} else {assetBalance(this, assetIdStr.fromBase58String())}
+}
 
-    let lastCheckInterestInState = tryGetInteger(addressStr + "_lastCheck_" + assetIdStr + "_interest")
-    let lastCheckInterest = if (lastCheckInterestInState == 0) then {0} else {lastCheckInterestInState}
-    let reward = fraction(currentInterest - lastCheckInterest, stakedAmount, Scale)
+## PUZZLE STAKING FUNCTIONS
+
+func getStakedBalance() = {
+  getInteger(stakingAddress, this.toString()+"_staked").valueOrElse(0)
+}
+
+func stake(amount: Int) = {
+  strict inv = invoke(stakingAddress, "stake", [], [AttachedPayment(puzzleId, amount)])
+  inv
+}
+
+func stakeAll() = {
+  strict inv = invoke(stakingAddress, "stake", [], [AttachedPayment(puzzleId, getBalance(puzzleIdStr))])
+  inv
+}
+
+func unstake(amount: Int) = {
+  strict inv = invoke(stakingAddress, "unStake", [amount], [])
+  inv
+}
+
+func claim() = {
+  strict inv = invoke(stakingAddress, "claimReward", [], [])
+  inv
+}
+
+func burn(amount: Int) = {
+  let toBurn = if amount > 10*Scale8 then 10*Scale8 else amount
+  Burn(puzzleId, toBurn)
+}
+
+## LP FUNCTIONS
+
+func getLPQuantity() = {
+  assetInfo(getStringValue("setup_lpId").fromBase58String()).value().quantity
+}
+
+func getLPContractPrice(changedAmount: Int) = {
+  strict claimResult = claim()
+  strict treasury = assetBalance(this, puzzleId) + getStakedBalance() + changedAmount
+
+  let quant = getLPQuantity()
+  if (quant == 0) then Scale8 else fraction(treasury, Scale8, quant)
+}
+
+func getStatsEntry () = {
+  let assets = split(getStringValue("setup_assets"), ",")
+  StringEntry("stats_" + toString(height), toString(getLPQuantity()) + "__" + toString(getBalance(value(assets[0]))) + "__" + toString(getStakedBalance()))
+}
+
+## CALLABLES
+
+@Callable(i)
+func init() = {
+  if (i.caller != this && i.caller.toString() != "3P9xX849YJXg7C87v82cDyDy5VhKiPJpHo8") then {throw("available for self-invoke only")}
+  else {
+    let lp = Issue("PZL.", "Staked PUZZLE with autocompounded yield. For more details check puzzle.network", 0, 8, true)
+    let lpId = lp.calculateAssetId()
+
     [
-        IntegerEntry(addressStr + "_lastCheck_" + assetIdStr + "_interest", currentInterest), 
-        IntegerEntry(addressStr + "_" + assetIdStr + "_claimed", tryGetInteger(addressStr + "_" + assetIdStr + "_claimed") + reward), 
-        ScriptTransfer(address, reward, assetIdStr.fromBase58String())]
-    }
-
-
-
-func claimResult (address: Address) = (claimAliasResult(address, usdnIdStr) ++ claimAliasResult(address, puzzleIdStr))
-
-
-@Callable(i)
-func stake () = {
-    let amount = i.payments[0].amount
-    let addressStr = toString(i.caller)
-
-    let assetIdStr = toBase58String(usdnId)
-    let totalStakedAmount = tryGetInteger("global_staked")
-    if ((i.payments[0].assetId != puzzleId))
-        then throw("wrong asset attached")
-        else (
-            claimResult(i.caller) ++ 
-            [
-                IntegerEntry("global_staked", (totalStakedAmount + amount)), 
-                IntegerEntry((addressStr + "_staked"), (tryGetInteger((addressStr + "_staked")) + amount))
-            ]
-        )
+      lp,
+      StringEntry("setup_lpId", lpId.toBase58String()),
+      StringEntry("setup_assets", puzzleIdStr)]
+  }
 }
 
-
 @Callable(i)
-func unStake(amount: Int) = {
-    let addressStr = toString(i.caller)
-    let stakedAmount = tryGetInteger((addressStr + "_staked"))
-    if ((amount > stakedAmount))
-        then throw("you don't have tokens available")
-        else (
-            claimResult(i.caller) ++ 
-            [
-                IntegerEntry((addressStr + "_staked"), (stakedAmount - amount)), 
-                IntegerEntry("global_staked", (tryGetInteger("global_staked") - amount)), 
-                ScriptTransfer(i.caller, amount, puzzleId)]
-        )
+func doRefPayment(ref: String, feeAmount: Int) = {
+  if (ref == "") then {
+    [
+      burn(feeAmount)
+    ]
+  } else {
+    let refAddress = getString("ref_"+ref+"_data").valueOrErrorMessage("ref " + ref + " not found").split("__")[0].value().addressFromStringValue()
+    let protocolPart = fraction(feeAmount, 1, 2)
+    [
+      burn(protocolPart),
+      ScriptTransfer(refAddress, feeAmount-protocolPart, puzzleId)
+    ]
+  }
 }
 
-
-
 @Callable(i)
-func claimReward () = claimResult(i.caller)
+func mintLP(ref: String) = {
+  let assetId = i.payments[0].assetId
+  let amount = i.payments[0].amount
+  let feeAmount = fraction(amount, Fee, Scale8, CEILING)
+  strict feeInv = invoke(this, "doRefPayment", [ref, feeAmount], [])
 
+  let cleanAmount = amount - feeAmount
 
+  let quantity = getLPQuantity()
+  strict toMint = fraction(cleanAmount, Scale8, getLPContractPrice(-cleanAmount), DOWN)
 
-@Callable(i)
-func topUpReward () = {
-    let pmtAsset = i.payments[0].assetId.value()
-    let pmtAmount = i.payments[0].amount
-    strict amount = if pmtAsset == usdnId then {
-        # strict b0 = assetBalance(this, puzzleId)
-        # strict inv = invoke(Address(base58'3PBHyEwmERR1CEkrTNbPj2bgyisTfPRqfee'), "exchange", [1], i.payments)
-        # strict b1 = assetBalance(this, puzzleId)
-        # b1 - b0
-        0
-    } else if pmtAsset == puzzleId then { pmtAmount }
-    else {throw("not correct asset attached")}
+  if (getStringValue("setup_assets").indexOf(assetId.getAssetString()) == unit) then {throw("wrong asset attached")}
+  else if (getString("setup_isPaused").valueOrElse("") != "") then {throw("contract is paused")}
+  else if ((quantity + toMint) > maxLPCap) then {throw("LP cap reached")}
+  else {
+    
+    let lpId = getStringValue("setup_lpId").fromBase58String()
+    let reissue = Reissue(lpId, toMint, true)
 
-    let currentInterest = tryGetInteger((("global_lastCheck_" + puzzleIdStr) + "_interest"))
-    let totalStakedAmount = tryGetInteger("global_staked")
-    let interestDelta = if ((totalStakedAmount > 0))
-        then fraction(amount, Scale, totalStakedAmount)
-        else 0
+    strict inv = stakeAll()
 
-    if pmtAsset == puzzleId then {
-    (
-        [
-            IntegerEntry((("global_" + puzzleIdStr) + "_earnings"), (tryGetInteger((("global_" + puzzleIdStr) + "_earnings")) + amount)), 
-            IntegerEntry((("global_lastCheck_" + puzzleIdStr) + "_interest"), (currentInterest + interestDelta))
-        ], amount)
-    } else {
-        [ScriptTransfer(Address(base58'3PFWAVKmXjfHXyzJb12jCbhP4Uhi9t4uWiD'), pmtAmount, pmtAsset)]
-    }
+    [
+      reissue,
+      ScriptTransfer(i.caller, toMint, lpId)
+    ]
+
+  }
 }
 
+@Callable(i)
+func redeemLP() = {
+  let lpId = getString("setup_lpId").valueOrElse("").fromBase58String()
+  let attachedAssetId = i.payments[0].assetId
+  let amount = i.payments[0].amount
 
-@Verifier(tx)
-func verify () = sigVerify(tx.bodyBytes, tx.proofs[0], tx.senderPublicKey)
+  let treasuryAssets = getStringValue("setup_assets").split(",")
+  let assetToReturn = treasuryAssets[0].getAssetBytes()
+  strict amountToReturn = fraction(amount, getLPContractPrice(0), Scale8, DOWN)
+
+  if (attachedAssetId != lpId) then {throw("wrong asset attached")}
+  # else if (i.caller.toString() != "3P9xX849YJXg7C87v82cDyDy5VhKiPJpHo8") then {throw("whitelist only")}
+  else if (getString("setup_isPaused").valueOrElse("") != "") then {throw("contract is paused")}
+  else {
+    strict inv = unstake(amountToReturn)
+
+    [
+      Burn(lpId, amount),
+      ScriptTransfer(i.caller, amountToReturn, assetToReturn),
+      getStatsEntry()
+    ]
+  }
+}
+
+## ADMIN FUNCTIONS
+
+@Callable(i)
+func addRef(domain: String, name: String, address: String, pic: String) = {
+  if (i.caller != this && i.caller.toString() != "3P9xX849YJXg7C87v82cDyDy5VhKiPJpHo8") then {throw("admin only")}
+  else {
+    [
+      StringEntry("ref_"+domain+"_data", address + "__" + name + "__" + pic),
+      StringEntry("ref_domains", getString("ref_domains").valueOrElse("") + domain + ",")
+    ]
+  }
+}
+
+@Callable(i)
+func updateString(key: String, val: String) = {
+  if (this != i.caller) then {throw("admin only")}
+  else {
+    [
+      StringEntry(key, val)
+    ]
+  }
+}
+
+@Callable(i)
+func updateInt(key: String, val: Int) = {
+  if (this != i.caller) then {throw("admin only")}
+  else {
+    [
+      IntegerEntry(key, val)
+    ]
+  }
+}
+
+@Callable(i)
+func getLPPrice(debug: Boolean) = {
+  strict res = getLPContractPrice(0)
+  if (debug) then { throw(res.toString()) } else { ([], res)}
+}
+
